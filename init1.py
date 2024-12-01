@@ -3,10 +3,11 @@ import pymysql.cursors
 import hashlib  # for MD5 hashing suggested in part 3
 
 app = Flask(__name__)
-conn = pymysql.connect(host='localhost',
+conn = pymysql.connect(host='127.0.0.1',
                        user='root',
-                       password='',
-                       db='nov28',
+                       password='root',
+                       db='airplane',
+                       port=8889,
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
 
@@ -141,7 +142,6 @@ def staff_registerAuth():
     return redirect(url_for('login', role='staff'))
 
 
-
 @app.route('/staff_loginAuth', methods=['POST'])
 def staff_loginAuth():
     username = request.form['username']
@@ -162,9 +162,6 @@ def staff_loginAuth():
     else:
         error = 'Invalid login or password'
         return render_template('staff_login.html', error=error)
-
-
-
 
 
 @app.route('/home')
@@ -232,7 +229,6 @@ def search_flights():
         return "Page not found", 404
 
 
-
 @app.route('/flight_status', methods=['POST'])
 def flight_status():
     airline_name = request.form['airline_name']
@@ -260,7 +256,6 @@ def flight_status():
 
     # Render the template with the flight status results
     return render_template('index.html', flight_status_results=flight_status_results)
-
 
 
 @app.route('/purchase_ticket', methods=['POST'])
@@ -398,6 +393,244 @@ def purchase_ticket():
             cursor.close()
 
 
+# ----------suha------------------ #
+
+@app.route('/view_staff_flights', methods=['GET', 'POST'])
+def view_staff_flights():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+    
+    username = session['username']  # Get the logged-in staff's username
+    cursor = conn.cursor()
+
+    #retrieve the airline the airport staff works at 
+    query = 'SELECT Airline_Name FROM Works_For WHERE Username = %s'
+    cursor.execute(query, (username,))
+    staff_airline = cursor.fetchone() # stores the airline the staff works at
+
+    if not staff_airline:
+        cursor.close()
+        return "Error: Airline Staff does not work at an Airline"
+    
+    airline_name = staff_airline['Airline_Name']
+
+    # default: show future flights for the next 30 days
+    flights = []
+    if request.method == 'GET':
+        query = """
+            SELECT Flight.Flight_Num, Flight.Departure_Date, Flight.Departure_Time, Flight.Arrival_Date, 
+            Flight.Arrival_Time, Flight.Departure_Code, Flight.Arrival_Code, Flight.Flight_Status
+            FROM Flight
+            WHERE WHERE Flight.Departure_Date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+        """
+        cursor.execute(query, (airline_name,))
+        flights = cursor.fetchall()
+
+    # filters 
+    if request.method == 'POST':
+        source = request.form.get('source')
+        destination = request.form.get('destination')
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+
+
+        query =  """
+            SELECT Flight.Flight_Num, Flight.Departure_Date, Flight.Departure_Time, Flight.Arrival_Date, 
+            Flight.Arrival_Time, Flight.Departure_Code, Flight.Arrival_Code, Flight.Flight_Status
+            FROM Flight
+            WHERE Flight.Airline_Name = %s
+        """
+
+        params = [airline_name]
+
+        if source:
+            query += ' AND Flight.Departure_Code IN (SELECT Airport_Code FROM Airport WHERE City LIKE %s OR Airport_Name LIKE %s)'
+            params.extend([f"%{source}%", f"%{source}%"])
+        if destination:
+            query += ' AND Flight.Arrival_Code IN (SELECT Airport_Code FROM Airport WHERE City LIKE %s OR Airport_Name LIKE %s)'
+            params.extend([f"%{destination}%", f"%{destination}%"])
+        if start_date and end_date:
+            query += ' AND Flight.Departure_Date BETWEEN %s AND %s'
+            params.extend([start_date, end_date])
+
+        cursor.execute(query, params)
+        flights = cursor.fetchall()
+
+    cursor.close()
+    return render_template('staff_flights.html', flights=flights, airline_name=airline_name)
+
+
+@app.route('/view_flight_customers', methods=['POST'])
+def view_flight_customers():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+
+    flight_num = request.form.get('flight_num')  # Get flight number from the form
+    cursor = conn.cursor()
+
+    # Query to fetch customers for the given flight
+    query = '''
+        SELECT C.First_Name, C.Last_Name, C.Email, T.Ticket_ID
+        FROM Ticket T
+        JOIN Customer C ON T.Email = C.Email
+        WHERE T.Flight_Num = %s
+    '''
+    cursor.execute(query, (flight_num,))
+    customers = cursor.fetchall()
+    cursor.close()
+
+    return render_template('view_customers.html', customers=customers, flight_num=flight_num)
+
+
+@app.route('/change_flight_status', methods=['GET', 'POST'])
+def change_flight_status():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+
+    username = session['username'] 
+    cursor = conn.cursor()
+
+    # Retrieve the airline the staff works for
+    query = 'SELECT Airline_Name FROM Works_For WHERE Username = %s'
+    cursor.execute(query, (username,))
+    staff_airline = cursor.fetchone()
+
+    if not staff_airline:
+        cursor.close()
+        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+
+    airline_name = staff_airline['Airline_Name']
+
+    if request.method == 'POST':
+        # Handle the flight status update
+        flight_num = request.form.get('flight_num')
+        new_status = request.form.get('status')
+
+        if not flight_num or not new_status: # delete ???
+            return "Error: Flight number or status not provided."
+
+        # Update the flight status
+        update_query = '''
+            UPDATE Flight
+            SET Flight_Status = %s
+            WHERE Flight_Num = %s AND Airline_Name = %s
+        '''
+        cursor.execute(update_query, (new_status, flight_num, airline_name))
+        conn.commit()
+
+        cursor.close()
+        return redirect(url_for('change_flight_status'))  # Redirect to the same page after updating
+
+    # Default: Display flights for the airline to select (only modify future flights)
+    query_for_flights = '''
+        SELECT Flight_Num, Departure_Date, Departure_Time, Arrival_Date, Arrival_Time, Flight_Status
+        FROM Flight
+        WHERE Airline_Name = %s AND Departure_Date >= CURDATE()
+    '''
+    cursor.execute(query_for_flights, (airline_name,))
+    flights = cursor.fetchall()
+    cursor.close()
+
+    return render_template('change_flight_status.html', flights=flights, airline_name=airline_name)
+
+
+@app.route('/add_airplane', methods=['GET', 'POST'])
+def add_airplane():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+    
+    username = session['username']
+    cursor = conn.cursor()
+
+    query = 'SELECT Airline_Name FROM Works_For WHERE Username = %s'
+    cursor.execute(query, (username,))
+    staff_airline = cursor.fetchone()
+
+    if not staff_airline:
+        cursor.close()
+        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+    
+    airline_name = staff_airline['Airline_Name']
+
+    if request.method == 'POST':
+        airplane_id = request.form.get('airplane_id')
+        num_seats = request.form.get('num_seats')
+        manufacturer = request.form.get('manufacturer')
+        model_num = request.form.get('model_num')
+        manufacture_date = request.form.get('manufacture_date')
+
+        query_insert = """
+            INSERT INTO Airplane (Airline_Name, Airplane_ID, Number_of_Seats, 
+            Manufacturing_Company, Model_Num, Manufacturing_Date, Age) 
+            VALUES (%s, %s, %s, %s, %s, %s, YEAR(CURDATE()) - YEAR(%s))
+        """
+        # age = YEAR(CURRENT_DATE) - YEAR(Manufacturing_Date)
+
+        cursor.execute(query_insert, (airline_name, airplane_id, num_seats, manufacturer, 
+                                      model_num, manufacture_date, manufacture_date))
+        conn.commit()
+
+        # all airplanes owned by the airline
+        query_airlines = """
+            SELECT Airline_Name, Airplane_ID, Number_of_Seats, 
+            Manufacturing_Company, Model_Num, Manufacturing_Date, Age
+            FROM Airplane
+            WHERE Airplane.Airline_Name = %s
+        """
+
+        cursor.execute(query_airlines,(airline_name,))
+        airplanes = cursor.fetchall()
+        cursor.close()
+
+        return render_template('airplane_confirmation.html', 
+                               airplanes=airplanes, airline_name=airline_name)
+    
+    return render_template('add_airport.html', airline_name=airline_name)
+
+
+@app.route('/add_airport', methods=['GET', 'POST'])
+def add_airport():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+    
+    if request.method == 'POST':
+        airport_code = request.form.get('airport_code')
+        airport_name = request.form.get('airport_name')
+        city = request.form.get('city')
+        country = request.form.get('country')
+        num_terminals = request.form.get('num_terminals')
+        airport_type = request.form.get('airport_type')
+
+        try:
+            cursor = conn.cursor()
+            query_insert = """
+                INSERT INTO Airport (Airport_Code, Airport_Name, City, Country, 
+                Number_of_Terminals, Airport_Type) VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query_insert, (airport_code, airport_name, city, country, num_terminals, airport_type))
+            conn.commit()
+
+            # show all airport confirmation ???
+            query_airports = """
+                SELECT Airport_Code, Airport_Name, City, Country, Number_of_Terminals, Airport_Type
+                FROM Airport
+                WHERE Airport_Code = %s
+            """
+
+            cursor.execute(query_airports, (airport_code,))
+            airport = cursor.fetchone()
+            cursor.close()
+
+            return render_template('airport_confirmation.html', airport=airport)
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Error inserting airport: {e}")
+            return f"Error: Unable to add airport. {str(e)}"
+        
+    return render_template('add_airport.html')
+
+#---------------suha------------------------#
 
 
 @app.route('/view_flights', methods=['GET'])
@@ -446,13 +679,23 @@ def view_flights():
 
 
 
-# Logout route
+# Logout route 
+# (modified slightly to lead to the airline staff and customer login pages)
 @app.route('/logout')
 def logout():
+    role = session.get('role')
     session.pop('email', None)
     session.pop('username', None)
     session.pop('role', None)
-    return redirect('/')
+    session.pop('first_name', None)
+    # return redirect('/')
+
+    if role == 'customer':
+        return redirect(url_for('login', role='customer'))
+    elif role == 'staff':
+        return redirect(url_for('login', role='staff'))
+    else:
+        return redirect(url_for('hello'))
 
 app.secret_key = 'some key that you will never guess'
 
