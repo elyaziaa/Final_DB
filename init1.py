@@ -1,13 +1,13 @@
 from flask import Flask, render_template, request, session, url_for, redirect
 import pymysql.cursors
 import hashlib  # for MD5 hashing suggested in part 3
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
-conn = pymysql.connect(host='127.0.0.1',
+conn = pymysql.connect(host='localhost',
                        user='root',
-                       password='root',
-                       db='airplane',
-                       port=8889,
+                       password='',
+                       db='nov28',
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
 
@@ -142,6 +142,7 @@ def staff_registerAuth():
     return redirect(url_for('login', role='staff'))
 
 
+
 @app.route('/staff_loginAuth', methods=['POST'])
 def staff_loginAuth():
     username = request.form['username']
@@ -162,6 +163,9 @@ def staff_loginAuth():
     else:
         error = 'Invalid login or password'
         return render_template('staff_login.html', error=error)
+
+
+
 
 
 @app.route('/home')
@@ -229,6 +233,7 @@ def search_flights():
         return "Page not found", 404
 
 
+
 @app.route('/flight_status', methods=['POST'])
 def flight_status():
     airline_name = request.form['airline_name']
@@ -257,6 +262,271 @@ def flight_status():
     # Render the template with the flight status results
     return render_template('index.html', flight_status_results=flight_status_results)
 
+@app.route('/rate_flight', methods=['GET', 'POST'])
+def rate_flight():
+    # Check if user is logged in
+    if 'email' not in session:
+        return redirect('/login')
+    
+    # For GET request, fetch available flights to rate
+    if request.method == 'GET':
+        try:
+            # Create database cursor
+            cursor = conn.cursor(pymysql.cursors.DictCursor)
+            
+            # Fetch flights the user has taken that are eligible for rating
+            cursor.execute("""
+                SELECT DISTINCT f.Flight_Num, 
+                       f.Departure_Code, 
+                       f.Arrival_Code, 
+                       f.Departure_Date, 
+                       f.Airline_Name,
+                       f.Departure_Time
+                FROM Flight f
+                JOIN Ticket t ON f.Flight_Num = t.Flight_Num
+                JOIN (
+                    SELECT Ticket_ID, Email FROM Purchase
+                    UNION
+                    SELECT Ticket_ID, Email FROM Booked
+                ) b ON t.Ticket_ID = b.Ticket_ID
+                LEFT JOIN Rate_Comment rc ON f.Flight_Num = rc.Flight_Num AND b.Email = rc.Email
+                WHERE b.Email = %s 
+                  AND f.Departure_Date < CURRENT_DATE
+                  AND rc.Flight_Num IS NULL
+            """, (session['email'],))
+            
+            flights_to_rate = cursor.fetchall()
+            
+            return render_template('rate_flight.html', flights=flights_to_rate)
+        
+        except pymysql.Error as err:
+            print(f"Database error: {err}")
+            return "Error fetching flights", 500
+        
+        finally:
+            if 'cursor' in locals():
+                cursor.close()
+    
+    # For POST request, process the rating submission
+    elif request.method == 'POST':
+        try:
+            # Get form data
+            flight_num = request.form['flight_num']
+            rating = request.form['rating']
+            comment = request.form.get('comment', '')  # Optional comment
+            
+            # Create database cursor
+            cursor = conn.cursor(pymysql.cursors.DictCursor)
+            
+            # Validate that the user has actually booked/purchased this flight
+            cursor.execute("""
+                SELECT 1 
+                FROM Flight f
+                JOIN Ticket t ON f.Flight_Num = t.Flight_Num
+                JOIN (
+                    SELECT Ticket_ID, Email FROM Purchase
+                    UNION
+                    SELECT Ticket_ID, Email FROM Booked
+                ) b ON t.Ticket_ID = b.Ticket_ID
+                WHERE b.Email = %s 
+                  AND f.Flight_Num = %s
+                  AND f.Departure_Date < CURRENT_DATE
+            """, (session['email'], flight_num))
+            
+            flight_exists = cursor.fetchone()
+            
+            # Check if flight rating already exists
+            cursor.execute("""
+                SELECT 1 
+                FROM Rate_Comment 
+                WHERE Email = %s AND Flight_Num = %s
+            """, (session['email'], flight_num))
+            
+            already_rated = cursor.fetchone()
+            
+            # Validate inputs
+            if not flight_exists:
+                return "Invalid flight or you did not take this flight", 400
+            
+            if already_rated:
+                return "You have already rated this flight", 400
+            
+            if not (1 <= int(rating) <= 5):
+                return "Rating must be between 1 and 5", 400
+            
+            # Insert rating and comment
+            cursor.execute("""
+                INSERT INTO Rate_Comment (Email, Flight_Num, Comment, Rating)
+                VALUES (%s, %s, %s, %s)
+            """, (session['email'], flight_num, comment, rating))
+            
+            # Commit the transaction
+            conn.commit()
+            
+            # Redirect to confirmation or back to rating page
+            return redirect('/customer_home')
+        
+        except pymysql.Error as err:
+            # Rollback in case of error
+            conn.rollback()
+            print(f"Database error: {err}")
+            return "Error submitting rating", 500
+        
+        except Exception as e:
+            # Rollback in case of any other error
+            conn.rollback()
+            print(f"Unexpected error: {e}")
+            return "An unexpected error occurred", 500
+        
+        finally:
+            if 'cursor' in locals():
+                cursor.close()
+
+
+
+@app.route('/customer_home')
+def customer_home():
+    # Check if user is logged in
+    if 'email' not in session:
+        return redirect('/login')
+    
+    return render_template('customer_home.html', email=session['email'])
+
+@app.route('/cancel_ticket', methods=['POST'])
+def cancel_ticket():
+    # Initialize variables
+    cursor = None
+
+    try:
+        # Check if user is logged in
+        if 'email' not in session:
+            return "Please log in first", 401
+
+        email = session['email']
+        ticket_id = request.form['ticket_id']
+
+        # Create database cursor
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        # Step 1: Validate Ticket Ownership and Flight Timing
+        cursor.execute("""
+            SELECT t.Flight_Num, t.Seat_Number, f.Departure_Date, f.Departure_Time
+            FROM Ticket t
+            JOIN Flight f ON t.Flight_Num = f.Flight_Num
+            JOIN Booked b ON t.Ticket_ID = b.Ticket_ID
+            WHERE t.Ticket_ID = %s AND b.Email = %s
+        """, (ticket_id, email))
+        ticket_info = cursor.fetchone()
+
+        # Check if ticket exists and belongs to the customer
+        if not ticket_info:
+            return "Ticket not found or does not belong to you", 400
+# Assuming ticket_info['Departure_Time'] is a timedelta
+        departure_time = (datetime.min + ticket_info['Departure_Time']).time()
+        flight_datetime = datetime.combine(ticket_info['Departure_Date'], departure_time)
+        current_datetime = datetime.now()
+        
+        if flight_datetime - current_datetime <= timedelta(hours=24):
+            return "Ticket cannot be canceled less than 24 hours before flight", 400
+
+        # Start database transaction
+        conn.begin()
+
+        # Step 2: Remove Booking Record FIRST
+        cursor.execute("DELETE FROM Booked WHERE Ticket_ID = %s", (ticket_id,))
+
+        # Step 3: Remove Purchase Record
+        cursor.execute("DELETE FROM Purchase WHERE Ticket_ID = %s", (ticket_id,))
+
+        # Step 4: Delete the Ticket
+        cursor.execute("DELETE FROM Ticket WHERE Ticket_ID = %s", (ticket_id,))
+
+        # Step 5: Restore Seat Availability
+        cursor.execute("""
+            UPDATE Seat_Availability 
+            SET Is_Available = TRUE 
+            WHERE Flight_Num = %s AND Seat_Number = %s
+        """, (ticket_info['Flight_Num'], ticket_info['Seat_Number']))
+
+        # Confirm all database changes
+        conn.commit()
+
+        # Optional: Refund Processing Logic (placeholder)
+        # In a real system, you'd implement refund logic here
+
+        return redirect('/customer_home')
+
+    except KeyError as e:
+        return f"Missing information: {str(e)}", 400
+
+    except pymysql.Error as err:
+        # If database transaction fails, undo changes
+        if conn:
+            conn.rollback()
+        print(f"Database error: {err}")
+        return "Error processing ticket cancellation", 500
+
+    except Exception as e:
+        # Handle any unexpected errors
+        if conn:
+            conn.rollback()
+        print(f"Unexpected error: {e}")
+        return "An unexpected error occurred", 500
+
+    finally:
+        # Always close database cursor
+        if cursor:
+            cursor.close()
+
+
+@app.route('/view_flights', methods=['GET'])
+def view_flights():
+    if 'email' not in session:  # Ensure the user is logged in
+        return redirect(url_for('login'))
+
+    email = session['email']  # Get the logged-in user's email
+    first_name = session.get('first_name', 'Guest')  # Retrieve first name from session
+    query_type = request.args.get('type', 'future')  # Get the query type (future/past)
+
+    try:
+        with conn.cursor() as cursor:
+            if query_type == 'past':
+                # Fetch past flights
+                query = """
+                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, f.Arrival_Date, f.Arrival_Time, 
+                           f.Departure_Code, f.Arrival_Code, f.Airline_Name, t.Sold_Price
+                    FROM Flight f
+                    JOIN Ticket t ON f.Flight_Num = t.Flight_Num
+                    JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
+                    WHERE p.Email = %s AND f.Departure_Date < CURDATE()
+                    ORDER BY f.Departure_Date DESC
+                """
+            else:
+                # Fetch future flights (default)
+                query = """
+                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, f.Arrival_Date, f.Arrival_Time, 
+                           f.Departure_Code, f.Arrival_Code, f.Airline_Name, t.Sold_Price
+                    FROM Flight f
+                    JOIN Ticket t ON f.Flight_Num = t.Flight_Num
+                    JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
+                    WHERE p.Email = %s AND f.Departure_Date >= CURDATE()
+                    ORDER BY f.Departure_Date ASC
+                """
+            cursor.execute(query, (email,))
+            flights = cursor.fetchall()  # Fetch results
+
+        return render_template('customer_home.html', 
+                               flights=flights, 
+                               query_type=query_type, 
+                               first_name=first_name)  # Pass first_name
+    except Exception as e:
+        print(f"Error fetching flights: {e}")
+        return redirect(url_for('customer_home'))
+
+
+
+
+
 
 @app.route('/purchase_ticket', methods=['POST'])
 def purchase_ticket():
@@ -271,9 +541,6 @@ def purchase_ticket():
         seat_number = request.form['seat_number']
         card_number = request.form['card_number']
 
-        # Check if user is logged in
-        if 'email' not in session:
-            return "Please log in first", 401
 
         email = session['email']
 
@@ -289,7 +556,7 @@ def purchase_ticket():
         flight = cursor.fetchone()
 
         if not flight:
-            return "Sorry, this flight is not available", 400
+            return "Sorry, tickets for this flight are not available", 400
 
         # Step 3: Get Customer Details
         # Retrieve customer information from database
@@ -300,8 +567,6 @@ def purchase_ticket():
         """, (email,))
         customer = cursor.fetchone()
 
-        if not customer:
-            return "Customer profile not found", 400
 
         # Step 4: Check Seat Availability
         cursor.execute("""
@@ -311,7 +576,7 @@ def purchase_ticket():
         seat = cursor.fetchone()
 
         if not seat or not seat['Is_Available']:
-            return "Sorry, this seat is already taken", 400
+            return "Sorry, this seat is not available", 400
 
         # Step 5: Validate Payment Method
         cursor.execute("""
@@ -322,7 +587,7 @@ def purchase_ticket():
         payment_card = cursor.fetchone()
 
         if not payment_card:
-            return "Invalid payment method", 400
+            return "Invalid card details", 400
 
         # Start a database transaction
         conn.begin()
@@ -393,7 +658,6 @@ def purchase_ticket():
             cursor.close()
 
 
-# ----------suha------------------ #
 
 @app.route('/view_staff_flights', methods=['GET', 'POST'])
 def view_staff_flights():
@@ -631,54 +895,6 @@ def add_airport():
     return render_template('add_airport.html')
 
 #---------------suha------------------------#
-
-
-@app.route('/view_flights', methods=['GET'])
-def view_flights():
-    if 'email' not in session:  # Ensure the user is logged in
-        return redirect(url_for('login'))
-
-    email = session['email']  # Get the logged-in user's email
-    first_name = session.get('first_name', 'Guest')  # Retrieve first name from session
-    query_type = request.args.get('type', 'future')  # Get the query type (future/past)
-
-    try:
-        with conn.cursor() as cursor:
-            if query_type == 'past':
-                # Fetch past flights
-                query = """
-                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, f.Arrival_Date, f.Arrival_Time, 
-                           f.Departure_Code, f.Arrival_Code, f.Airline_Name, t.Sold_Price
-                    FROM Flight f
-                    JOIN Ticket t ON f.Flight_Num = t.Flight_Num
-                    JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
-                    WHERE p.Email = %s AND f.Departure_Date < CURDATE()
-                    ORDER BY f.Departure_Date DESC
-                """
-            else:
-                # Fetch future flights (default)
-                query = """
-                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, f.Arrival_Date, f.Arrival_Time, 
-                           f.Departure_Code, f.Arrival_Code, f.Airline_Name, t.Sold_Price
-                    FROM Flight f
-                    JOIN Ticket t ON f.Flight_Num = t.Flight_Num
-                    JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
-                    WHERE p.Email = %s AND f.Departure_Date >= CURDATE()
-                    ORDER BY f.Departure_Date ASC
-                """
-            cursor.execute(query, (email,))
-            flights = cursor.fetchall()  # Fetch results
-
-        return render_template('customer_home.html', 
-                               flights=flights, 
-                               query_type=query_type, 
-                               first_name=first_name)  # Pass first_name
-    except Exception as e:
-        print(f"Error fetching flights: {e}")
-        return redirect(url_for('customer_home'))
-
-
-
 # Logout route 
 # (modified slightly to lead to the airline staff and customer login pages)
 @app.route('/logout')
