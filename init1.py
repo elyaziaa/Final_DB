@@ -4,10 +4,11 @@ import hashlib  # for MD5 hashing suggested in part 3
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
-conn = pymysql.connect(host='localhost',
+conn = pymysql.connect(host='127.0.0.1',
                        user='root',
-                       password='',
-                       db='nov28',
+                       password='root',
+                       port=8889,
+                       db='airplane',
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
 
@@ -261,6 +262,7 @@ def flight_status():
 
     # Render the template with the flight status results
     return render_template('index.html', flight_status_results=flight_status_results)
+
 
 @app.route('/rate_flight', methods=['GET', 'POST'])
 def rate_flight():
@@ -657,9 +659,9 @@ def purchase_ticket():
         if cursor:
             cursor.close()
 
+# ----------suha------------------ #
 
-
-@app.route('/view_staff_flights', methods=['GET', 'POST'])
+@app.route('/view_staff_flights', methods=['GET', 'POST'])  # (not working yet)
 def view_staff_flights():
     if 'role' not in session or session['role'] != 'staff':
         return redirect(url_for('login', role='staff'))
@@ -746,7 +748,7 @@ def view_flight_customers():
     return render_template('view_customers.html', customers=customers, flight_num=flight_num)
 
 
-@app.route('/change_flight_status', methods=['GET', 'POST'])
+@app.route('/change_flight_status', methods=['GET', 'POST']) 
 def change_flight_status():
     if 'role' not in session or session['role'] != 'staff':
         return redirect(url_for('login', role='staff'))
@@ -849,7 +851,7 @@ def add_airplane():
         return render_template('airplane_confirmation.html', 
                                airplanes=airplanes, airline_name=airline_name)
     
-    return render_template('add_airport.html', airline_name=airline_name)
+    return render_template('add_airplane.html', airline_name=airline_name)
 
 
 @app.route('/add_airport', methods=['GET', 'POST'])
@@ -894,7 +896,210 @@ def add_airport():
         
     return render_template('add_airport.html')
 
-#---------------suha------------------------#
+
+@app.route('/view_earned_revenue', methods=['GET'])
+def view_earned_revenue():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+     
+    username = session['username']
+    cursor = conn.cursor()
+
+    query = """
+        SELECT Airline_Name 
+        FROM Works_For 
+        WHERE Username = %s
+    """
+    cursor.execute(query, (username,))
+    staff_airline = cursor.fetchone()
+
+    if not staff_airline:
+        cursor.close()
+        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+    
+    airline_name = staff_airline['Airline_Name']
+
+    query_for_month = """
+       SELECT SUM(Ticket.Sold_Price) AS Last_Month_Revenue
+        FROM Purchase, Ticket, Flight
+        WHERE Flight.Airline_Name = %s
+            AND Purchase.Ticket_ID = Ticket.Ticket_ID
+            AND Ticket.Flight_Num = Flight.Flight_Num
+            AND Purchase.Purchase_Date BETWEEN CURDATE() - INTERVAL 1 MONTH AND CURDATE()
+    """
+    cursor.execute(query_for_month, (airline_name,))
+    revenue_for_month = cursor.fetchone()['Last_Month_Revenue'] or 0
+    
+    query_for_year = """
+        SELECT SUM(Ticket.Sold_Price) AS Last_Year_Revenue
+        FROM Purchase, Ticket, Flight
+        WHERE Flight.Airline_Name = %s
+            AND Purchase.Ticket_ID = Ticket.Ticket_ID
+            AND Ticket.Flight_Num = Flight.Flight_Num
+            AND Purchase.Purchase_Date BETWEEN CURDATE() - INTERVAL 1 YEAR AND CURDATE()
+    """
+    cursor.execute(query_for_year, (airline_name,))
+    revenue_for_year = cursor.fetchone()['Last_Year_Revenue'] or 0
+
+    cursor.close()
+
+    return render_template(
+        'view_earned_revenue.html',
+        airline_name=airline_name,
+        revenue_last_month=revenue_for_month,
+        revenue_last_year=revenue_for_year
+    )
+
+
+@app.route('/view_flight_ratings', methods=['GET'])  # check this after adding rating and comments from customer
+def view_flight_ratings():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+     
+    username = session['username']
+    cursor = conn.cursor()
+
+    query = """
+        SELECT Airline_Name 
+        FROM Works_For 
+        WHERE Username = %s
+    """
+    cursor.execute(query, (username,))
+    staff_airline = cursor.fetchone()
+
+    if not staff_airline:
+        cursor.close()
+        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+    
+    airline_name = staff_airline['Airline_Name']
+
+    query_for_flights = """
+        SELECT Flight_Num, Departure_Date, Departure_Code, Arrival_Date, Arrival_Code
+        FROM Flight
+        WHERE Airline_Name = %s
+    """
+
+    cursor.execute(query_for_flights, (airline_name,))
+    flights = cursor.fetchall()
+
+    flight_info = []
+    for flight in flights:
+        flight_num = flight['Flight_Num']
+
+        query_average_rating = """
+            SELECT AVG(Rating) AS Average_Rating
+            FROM Rate_Comment
+            WHERE Flight_Num= %s
+        """
+
+        cursor.execute(query_average_rating, (flight_num,))
+        rating = cursor.fetchone()['Average_Rating'] or 0
+
+        query_flight_comments = """
+            SELECT Comment, Rating, Email
+            FROM Rate_Comment
+            WHERE Flight_Num= %s
+        """
+        cursor.execute(query_flight_comments, (flight_num,))
+        comments = cursor.fetchall()
+
+        flight_info.append({
+            'Flight_Num': flight_num,
+            'Departure_Date': flight['Departure_Date'],
+            'Arrival_Date': flight['Arrival_Date'],
+            'Departure_Code': flight['Departure_Code'],
+            'Arrival_Code': flight['Arrival_Code'],
+            'Avg_Rating': rating,
+            'Comments': comments
+        })
+
+    cursor.close()
+    return render_template('view_flight_ratings.html', 
+                           flights=flight_info, airline_name=airline_name)
+
+@app.route('/view_frequent_customer', methods=['GET', 'POST'])
+def view_frequent_customer():
+    if 'role' not in session or session['role'] != 'staff':
+        return redirect(url_for('login', role='staff'))
+     
+    username = session['username']
+    cursor = conn.cursor()
+
+    query = """
+        SELECT Airline_Name 
+        FROM Works_For 
+        WHERE Username = %s
+    """
+    cursor.execute(query, (username,))
+    staff_airline = cursor.fetchone()
+
+    if not staff_airline:
+        cursor.close()
+        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+    
+    airline_name = staff_airline['Airline_Name']
+
+    query_most_freq_cust = """
+        SELECT Customer.Email, Customer.First_Name, Customer.Last_Name, 
+            COUNT(DISTINCT Flight.Flight_Num) AS Total_Flights
+        FROM Ticket, Customer, Flight
+        WHERE Flight.Airline_Name = %s
+            AND Ticket.Email = Customer.Email
+            AND Ticket.Flight_Num = Flight.Flight_Num
+            AND Flight.Departure_Date BETWEEN CURDATE() - INTERVAL 1 YEAR AND CURDATE()
+        GROUP BY Customer.Email
+        ORDER BY Total_Flights DESC
+        LIMIT 1
+    """
+    cursor.execute(query_most_freq_cust, (airline_name,))
+    frequent_customer = cursor.fetchone()
+
+    query_customers = """
+        SELECT DISTINCT Customer.Email, Customer.First_Name, Customer.Last_Name
+        FROM Ticket, Customer, Flight
+        WHERE Flight.Airline_Name = %s
+            AND Ticket.Email = Customer.Email
+            AND Ticket.Flight_Num = Flight.Flight_Num
+    """
+    cursor.execute(query_customers, (airline_name,))
+    customers = cursor.fetchall()
+
+    # customer = request.args.get('email')
+    # customer_flights = None
+
+    flight_data = []
+    for customer in customers:
+        email = customer['Email']
+
+        query_customer_flights = """
+            SELECT Flight.Flight_Num, Flight.Departure_Date, Flight.Arrival_Date, 
+                Flight.Departure_Code, Flight.Arrival_Code
+            FROM Ticket, Flight
+            WHERE Ticket.Email = %s AND Flight.Airline_Name = %s
+                AND Ticket.Flight_Num = Flight.Flight_Num
+                AND Flight.Departure_Date < CURDATE()
+        """
+        cursor.execute(query_customer_flights, (email, airline_name))
+        flights = cursor.fetchall()
+
+        flight_data.append({
+            'customer': customer,
+            'flights': flights
+        })
+
+    cursor.close()    
+        
+    if not frequent_customer:
+        return "No frequent customers found in the last year."
+
+    return render_template(
+        'view_frequent_customer.html',
+        most_frequent_customer=frequent_customer,
+        customer_flights_data=flight_data,
+        airline_name=airline_name
+    )
+
+
 # Logout route 
 # (modified slightly to lead to the airline staff and customer login pages)
 @app.route('/logout')
@@ -904,7 +1109,6 @@ def logout():
     session.pop('username', None)
     session.pop('role', None)
     session.pop('first_name', None)
-    # return redirect('/')
 
     if role == 'customer':
         return redirect(url_for('login', role='customer'))
