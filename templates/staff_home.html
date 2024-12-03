@@ -10,79 +10,83 @@
 
     <hr>
 
-    <!-- Indicate the type of results -->
-    {% if request.method == "GET" %}
-        <h2>Showing Future Flights for the Next 30 Days</h2>
-    {% elif request.method == "POST" %}
-        <h2>Showing Filtered Results</h2>
-    {% endif %}
+         <!-- Display Flights -->
+         <h2>Flights (Default)</h2>
+         {% if flights %}
+             <table border="1">
+                 <tr>
+                     <th>Flight Number</th>
+                     <th>Departure Date</th>
+                     <th>Departure Time</th>
+                     <th>Arrival Date</th>
+                     <th>Arrival Time</th>
+                     <th>Source</th>
+                     <th>Destination</th>
+                     <th>Status</th>
+                     <th>View Customers</th>
+                 </tr>
+                 {% for flight in flights %}
+                 <tr>
+                     <td>{{ flight['Flight_Num'] }}</td>
+                     <td>{{ flight['Departure_Date'] }}</td>
+                     <td>{{ flight['Departure_Time'] }}</td>
+                     <td>{{ flight['Arrival_Date'] }}</td>
+                     <td>{{ flight['Arrival_Time'] }}</td>
+                     <td>{{ flight['Departure_Code'] }}</td>
+                     <td>{{ flight['Arrival_Code'] }}</td>
+                     <td>{{ flight['Flight_Status'] }}</td>
+                     <td>
+                         <form action="/view_flight_customers" method="POST" style="display:inline;">
+                             <input type="hidden" name="flight_num" value="{{ flight['Flight_Num'] }}" />
+                             <input type="submit" value="View Customers" />
+                         </form>
+                     </td>
+                 </tr>
+                 {% endfor %}
+             </table>
+         {% else %}
+             <p>No flights found.</p>
+         {% endif %}
     <hr>
 
-    <!-- Filter Flights -->
-    <h3>Filter Flights</h3>
-    <form method="POST">
-        <label for="source">Source Airport:</label>
-        <input type="text" name="source" id="source" placeholder="Source Airport Code" /><br>
-
-        <label for="destination">Destination Airport:</label>
-        <input type="text" name="destination" id="destination" placeholder="Destination Airport Code" /><br>
-
-        <label for="start_date">Start Date:</label>
-        <input type="date" name="start_date" id="start_date" /><br>
-
-        <label for="end_date">End Date:</label>
-        <input type="date" name="end_date" id="end_date" /><br>
-
-        <button type="submit">Search</button>
-    </form>
+    <!-- Create New Flight -->
+    <h2>Create New Flight</h2>
     <hr>
 
-     <!-- Navigation Links -->
-     <h5>Options</h5>
-     <ul>
-         <li><a href="/view_flights">View Flights</a></li>
-         <li><a href="/change_flight_status">Change Flight Status</a></li>
-         <li><a href="/add_airplane">Add New Airplane</a></li>
-         <li><a href="/add_airport">Add New Airport</a></li>
-     </ul>
+    <!-- Change Flight Status -->
+    <h2>Change Flight Status</h2>
+    <a href="/change_flight_status">Click Here to Update Flight Status</a>
+    <hr>
 
-     <!-- Display Flights -->
-     <h6>Flights</h6>
-     {% if flights %}
-         <table border="1">
-             <tr>
-                 <th>Flight Number</th>
-                 <th>Departure Date</th>
-                 <th>Departure Time</th>
-                 <th>Arrival Date</th>
-                 <th>Arrival Time</th>
-                 <th>Source</th>
-                 <th>Destination</th>
-                 <th>Status</th>
-                 <th>View Customers</th>
-             </tr>
-             {% for flight in flights %}
-             <tr>
-                 <td>{{ flight['Flight_Num'] }}</td>
-                 <td>{{ flight['Departure_Date'] }}</td>
-                 <td>{{ flight['Departure_Time'] }}</td>
-                 <td>{{ flight['Arrival_Date'] }}</td>
-                 <td>{{ flight['Arrival_Time'] }}</td>
-                 <td>{{ flight['Departure_Code'] }}</td>
-                 <td>{{ flight['Arrival_Code'] }}</td>
-                 <td>{{ flight['Flight_Status'] }}</td>
-                 <td>
-                     <form action="/view_flight_customers" method="POST" style="display:inline;">
-                         <input type="hidden" name="flight_num" value="{{ flight['Flight_Num'] }}" />
-                         <input type="submit" value="View Customers" />
-                     </form>
-                 </td>
-             </tr>
-             {% endfor %}
-         </table>
-     {% else %}
-         <p>No flights found.</p>
-     {% endif %}
+    <!-- Add New Airplane -->
+    <h2>Add New Airplane</h2>
+    <a href="/add_airplane">Click Here to Add New Airplane</a>
+    <hr>
+
+    <!-- Add New Airport -->
+    <h2>Add New Airport</h2>
+    <a href="/add_airport">Click Here to Add New Airport</a>
+    <hr>
+
+    <!-- View Flight Ratings -->
+    <h2>View Flight Ratings</h2>
+    <a href="/view_flight_ratings">Click Here to View Flight Ratings</a>
+    <hr>
+
+    <!-- Schedule Maintenance -->
+    <h2>Schedule Maintenance</h2>
+    <hr>
+
+    <!-- View Frequent Customers -->
+    <h2>View Frequent Customer</h2>
+    <a href="/view_frequent_customer">Click Here to View Frequent Customers</a>
+    <hr>
+
+    <!-- View Earned Revenue -->
+     <h2>View Earned Revenue</h2>
+    <a href="/view_earned_revenue">Click Here to View Earned Revenue</a>
+    <hr>
+
  </body>
  </html>
 
