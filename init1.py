@@ -114,6 +114,8 @@ def staff_registerAuth():
     last_name = request.form['last_name']
     password = request.form['password']
     date_of_birth = request.form['date_of_birth']
+    email = request.form['email']
+    phone = request.form['phone']
 
     # Hash the password
     hashed_password = hashlib.md5(password.encode()).hexdigest()
@@ -127,19 +129,36 @@ def staff_registerAuth():
 
     if data:
         cursor.close()
-        error = "This username is already registered."
+        error = "This username is already used."
         return render_template('staff_register.html', error=error)
 
-    # Insert the new staff member into the database
-    insert_query = '''
-        INSERT INTO Airline_Staff (Username, First_Name, Last_Name, Passcode, Date_of_Birth)
-        VALUES (%s, %s, %s, %s, %s)
-    '''
-    cursor.execute(insert_query, (username, first_name, last_name, hashed_password, date_of_birth))
-    conn.commit()
-    cursor.close()
+    try:
+        # Insert the new staff member into the database
+        insert_query = """
+            INSERT INTO Airline_Staff (Username, First_Name, Last_Name, Passcode, Date_of_Birth)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        cursor.execute(insert_query, (username, first_name, last_name, hashed_password, date_of_birth))
+        
+        query_email = """
+            INSERT INTO Airline_Staff_Email (Username, Email)
+            VALUES (%s, %s)
+        """
+        cursor.execute(query_email, (username, email))
+        query_phone = """
+            INSERT INTO Airline_Staff_Phone (Username, Phone)
+            VALUES (%s, %s)
+        """    
+        cursor.execute(query_phone, (username, phone))
 
-    # Redirect to the login page after successful registration
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        return f"Error during registration: {str(e)}"
+    
+    cursor.close()
     return redirect(url_for('login', role='staff'))
 
 
@@ -423,7 +442,7 @@ def cancel_ticket():
         # Check if ticket exists and belongs to the customer
         if not ticket_info:
             return "Ticket not found or does not belong to you", 400
-# Assuming ticket_info['Departure_Time'] is a timedelta
+        # Assuming ticket_info['Departure_Time'] is a timedelta
         departure_time = (datetime.min + ticket_info['Departure_Time']).time()
         flight_datetime = datetime.combine(ticket_info['Departure_Date'], departure_time)
         current_datetime = datetime.now()
@@ -661,6 +680,7 @@ def purchase_ticket():
 
 # ----------suha------------------ #
 
+# use case 1
 @app.route('/view_staff_flights', methods=['GET', 'POST'])  # (not working yet)
 def view_staff_flights():
     if 'role' not in session or session['role'] != 'staff':
@@ -687,7 +707,7 @@ def view_staff_flights():
             SELECT Flight.Flight_Num, Flight.Departure_Date, Flight.Departure_Time, Flight.Arrival_Date, 
             Flight.Arrival_Time, Flight.Departure_Code, Flight.Arrival_Code, Flight.Flight_Status
             FROM Flight
-            WHERE WHERE Flight.Departure_Date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+            WHERE Flight.Departure_Date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
         """
         cursor.execute(query, (airline_name,))
         flights = cursor.fetchall()
@@ -725,7 +745,7 @@ def view_staff_flights():
     cursor.close()
     return render_template('staff_flights.html', flights=flights, airline_name=airline_name)
 
-
+# use case 1 
 @app.route('/view_flight_customers', methods=['POST'])
 def view_flight_customers():
     if 'role' not in session or session['role'] != 'staff':
@@ -747,7 +767,7 @@ def view_flight_customers():
 
     return render_template('view_customers.html', customers=customers, flight_num=flight_num)
 
-
+# use case 3
 @app.route('/change_flight_status', methods=['GET', 'POST']) 
 def change_flight_status():
     if 'role' not in session or session['role'] != 'staff':
@@ -763,7 +783,7 @@ def change_flight_status():
 
     if not staff_airline:
         cursor.close()
-        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+        return "Airline for Airline Staff Not Found"
 
     airline_name = staff_airline['Airline_Name']
 
@@ -772,27 +792,33 @@ def change_flight_status():
         flight_num = request.form.get('flight_num')
         new_status = request.form.get('status')
 
-        if not flight_num or not new_status: # delete ???
-            return "Error: Flight number or status not provided."
-
-        # Update the flight status
-        update_query = '''
-            UPDATE Flight
-            SET Flight_Status = %s
-            WHERE Flight_Num = %s AND Airline_Name = %s
-        '''
-        cursor.execute(update_query, (new_status, flight_num, airline_name))
-        conn.commit()
-
+        if not flight_num or not new_status:
+            return "Flight number or status not provided"
+       
+        try:
+            # Update the flight status
+            update_query = '''
+                UPDATE Flight
+                SET Flight_Status = %s
+                WHERE Flight_Num = %s AND Airline_Name = %s
+            '''
+            cursor.execute(update_query, (new_status, flight_num, airline_name))
+            conn.commit()
+        
+        except Exception as e:    
+            conn.rollback()
+            cursor.close()
+            return f"Unable to update flight status. {str(e)}"
+        
         cursor.close()
-        return redirect(url_for('change_flight_status'))  # Redirect to the same page after updating
+        return redirect(url_for('change_flight_status'))
 
-    # Default: Display flights for the airline to select (only modify future flights)
-    query_for_flights = '''
+    # only modify status of future flights
+    query_for_flights = """
         SELECT Flight_Num, Departure_Date, Departure_Time, Arrival_Date, Arrival_Time, Flight_Status
         FROM Flight
         WHERE Airline_Name = %s AND Departure_Date >= CURDATE()
-    '''
+    """
     cursor.execute(query_for_flights, (airline_name,))
     flights = cursor.fetchall()
     cursor.close()
@@ -800,6 +826,7 @@ def change_flight_status():
     return render_template('change_flight_status.html', flights=flights, airline_name=airline_name)
 
 
+# use case 4
 @app.route('/add_airplane', methods=['GET', 'POST'])
 def add_airplane():
     if 'role' not in session or session['role'] != 'staff':
@@ -808,95 +835,191 @@ def add_airplane():
     username = session['username']
     cursor = conn.cursor()
 
-    query = 'SELECT Airline_Name FROM Works_For WHERE Username = %s'
-    cursor.execute(query, (username,))
-    staff_airline = cursor.fetchone()
+    try:
+        query = 'SELECT Airline_Name FROM Works_For WHERE Username = %s'
+        cursor.execute(query, (username,))
+        staff_airline = cursor.fetchone()
 
-    if not staff_airline:
-        cursor.close()
-        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+        if not staff_airline:
+            cursor.close()
+            return "Airline for Airline Staff Not Found."
+
+        airline_name = staff_airline['Airline_Name']
+
+        if request.method == 'POST':
+            airplane_id = request.form.get('airplane_id')
+            num_seats = request.form.get('num_seats')
+            manufacturer = request.form.get('manufacturer')
+            model_num = request.form.get('model_num')
+            manufacture_date = request.form.get('manufacture_date')
+
+            if not (airplane_id and num_seats and manufacturer and model_num and manufacture_date):
+                return "Fill out all fields."
+
+            try:
+
+                query_date = "SELECT CURDATE()"
+                cursor.execute(query_date)
+                current_date = cursor.fetchone()['CURDATE()']
+
+                if manufacture_date > str(current_date):
+                    return f"The manufacturing date {manufacture_date} cannot exceed the current date {current_date}."
+
+                # Check for duplicate airplane
+                query_duplicate = """
+                    SELECT * 
+                    FROM Airplane 
+                    WHERE Airplane_ID = %s AND Airline_Name = %s
+                """
+                cursor.execute(query_duplicate, (airplane_id, airline_name))
+                existing_airplane = cursor.fetchone()
+
+                if existing_airplane:
+                    return f"Airplane with ID {airplane_id} already exists."
+
+                # Insert the airplane
+                query_insert_airplane = """
+                    INSERT INTO Airplane (Airline_Name, Airplane_ID, Number_of_Seats, 
+                                          Manufacturing_Company, Model_Num, Manufacturing_Date, Age) 
+                    VALUES (%s, %s, %s, %s, %s, %s, YEAR(CURDATE()) - YEAR(%s))
+                """
+                cursor.execute(query_insert_airplane, (airline_name, airplane_id, num_seats, manufacturer, 
+                                              model_num, manufacture_date, manufacture_date))
+                
+                 # update owns table
+                query_insert_owns = """
+                    INSERT INTO Owns (Airline_Name, Airplane_ID) 
+                    VALUES (%s, %s)
+                """
+                cursor.execute(query_insert_owns, (airline_name, airplane_id))
+                
+                conn.commit()
+
+                # all airplanes
+                query_airplanes = """
+                    SELECT Airline_Name, Airplane_ID, Number_of_Seats, 
+                           Manufacturing_Company, Model_Num, Manufacturing_Date, Age
+                    FROM Airplane
+                    WHERE Airline_Name = %s
+                """
+                cursor.execute(query_airplanes, (airline_name,))
+                airplanes = cursor.fetchall()
+
+                return render_template('airplane_confirmation.html', 
+                                       airplanes=airplanes, airline_name=airline_name)
+            
+            except Exception as e:
+                conn.rollback()
+                return f"Unable to add new airplane. {str(e)}"
+        
+        return render_template('add_airplane.html', airline_name=airline_name)
+
+    except Exception as e:
+        return f"Error: {str(e)}"
     
-    airline_name = staff_airline['Airline_Name']
-
-    if request.method == 'POST':
-        airplane_id = request.form.get('airplane_id')
-        num_seats = request.form.get('num_seats')
-        manufacturer = request.form.get('manufacturer')
-        model_num = request.form.get('model_num')
-        manufacture_date = request.form.get('manufacture_date')
-
-        query_insert = """
-            INSERT INTO Airplane (Airline_Name, Airplane_ID, Number_of_Seats, 
-            Manufacturing_Company, Model_Num, Manufacturing_Date, Age) 
-            VALUES (%s, %s, %s, %s, %s, %s, YEAR(CURDATE()) - YEAR(%s))
-        """
-        # age = YEAR(CURRENT_DATE) - YEAR(Manufacturing_Date)
-
-        cursor.execute(query_insert, (airline_name, airplane_id, num_seats, manufacturer, 
-                                      model_num, manufacture_date, manufacture_date))
-        conn.commit()
-
-        # all airplanes owned by the airline
-        query_airlines = """
-            SELECT Airline_Name, Airplane_ID, Number_of_Seats, 
-            Manufacturing_Company, Model_Num, Manufacturing_Date, Age
-            FROM Airplane
-            WHERE Airplane.Airline_Name = %s
-        """
-
-        cursor.execute(query_airlines,(airline_name,))
-        airplanes = cursor.fetchall()
+    finally:
         cursor.close()
 
-        return render_template('airplane_confirmation.html', 
-                               airplanes=airplanes, airline_name=airline_name)
-    
-    return render_template('add_airplane.html', airline_name=airline_name)
-
-
+# use case 5
 @app.route('/add_airport', methods=['GET', 'POST'])
 def add_airport():
     if 'role' not in session or session['role'] != 'staff':
         return redirect(url_for('login', role='staff'))
     
-    if request.method == 'POST':
-        airport_code = request.form.get('airport_code')
-        airport_name = request.form.get('airport_name')
-        city = request.form.get('city')
-        country = request.form.get('country')
-        num_terminals = request.form.get('num_terminals')
-        airport_type = request.form.get('airport_type')
+    username = session['username']
+    cursor = conn.cursor()
 
-        try:
-            cursor = conn.cursor()
-            query_insert = """
-                INSERT INTO Airport (Airport_Code, Airport_Name, City, Country, 
-                Number_of_Terminals, Airport_Type) VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            cursor.execute(query_insert, (airport_code, airport_name, city, country, num_terminals, airport_type))
-            conn.commit()
+    try:
+        # get the airline the staff works for
+        query_airline = 'SELECT Airline_Name FROM Works_For WHERE Username = %s'
+        cursor.execute(query_airline, (username,))
+        staff_airline = cursor.fetchone()
 
-            # show all airport confirmation ???
-            query_airports = """
-                SELECT Airport_Code, Airport_Name, City, Country, Number_of_Terminals, Airport_Type
-                FROM Airport
-                WHERE Airport_Code = %s
-            """
-
-            cursor.execute(query_airports, (airport_code,))
-            airport = cursor.fetchone()
+        if not staff_airline:
             cursor.close()
+            return "Airline for Airline Staff Not Found."
 
-            return render_template('airport_confirmation.html', airport=airport)
+        airline_name = staff_airline['Airline_Name']
 
-        except Exception as e:
-            conn.rollback()
-            print(f"Error inserting airport: {e}")
-            return f"Error: Unable to add airport. {str(e)}"
-        
-    return render_template('add_airport.html')
+        if request.method == 'POST':
+            airport_code = request.form.get('airport_code')
+            airport_name = request.form.get('airport_name')
+            city = request.form.get('city')
+            country = request.form.get('country')
+            num_terminals = request.form.get('num_terminals')
+            airport_type = request.form.get('airport_type')
+
+            if not (airport_code and airport_name and city and country and num_terminals and airport_type):
+                return "Fill out all fields."
+
+            try:
+                # Check if the airport already exists
+                query_duplicate_airport = """
+                    SELECT * 
+                    FROM Airport 
+                    WHERE Airport_Code = %s
+                """
+                cursor.execute(query_duplicate_airport, (airport_code,))
+                existing_airport = cursor.fetchone()
+
+                if not existing_airport:
+                    query_insert_airport = """
+                        INSERT INTO Airport (Airport_Code, Airport_Name, City, Country, 
+                                             Number_of_Terminals, Airport_Type) 
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(query_insert_airport, (airport_code, airport_name, city, country, num_terminals, airport_type))
+                    conn.commit()
+
+                # Check if the airport is operated by this airline
+                query_duplicate_operates = """
+                    SELECT * 
+                    FROM Operates 
+                    WHERE Airline_Name = %s AND Airport_Code = %s
+                """
+                cursor.execute(query_duplicate_operates, (airline_name, airport_code))
+                existing_association = cursor.fetchone()
+
+                if existing_association:
+                    return f"The airport {airport_code} is already associated with the airline {airline_name}."
+
+                # associate the airport with the airline via operates
+                query_insert_operates = """
+                    INSERT INTO Operates (Airline_Name, Airport_Code) 
+                    VALUES (%s, %s)
+                """
+                cursor.execute(query_insert_operates, (airline_name, airport_code))
+                conn.commit()
+
+                # confirmation info
+                query_airports = """
+                    SELECT Airport_Code, Airport_Name, City, Country, Number_of_Terminals, Airport_Type
+                    FROM Airport
+                    WHERE Airport_Code = %s
+                """
+                cursor.execute(query_airports, (airport_code,))
+                airport = cursor.fetchone()
+
+                return render_template(
+                    'airport_confirmation.html', 
+                    airport=airport, 
+                    airline_name=airline_name
+                )
+
+            except Exception as e:
+                conn.rollback()
+                return f"Unable to add airport. {str(e)}"
+            
+        return render_template('add_airport.html', airline_name=airline_name)
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+    finally:
+        cursor.close()
 
 
+#use case 9
 @app.route('/view_earned_revenue', methods=['GET'])
 def view_earned_revenue():
     if 'role' not in session or session['role'] != 'staff':
@@ -915,7 +1038,7 @@ def view_earned_revenue():
 
     if not staff_airline:
         cursor.close()
-        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+        return "Airline for Airline Staff Not Found."
     
     airline_name = staff_airline['Airline_Name']
 
@@ -950,7 +1073,7 @@ def view_earned_revenue():
         revenue_last_year=revenue_for_year
     )
 
-
+# use case 6
 @app.route('/view_flight_ratings', methods=['GET'])  # check this after adding rating and comments from customer
 def view_flight_ratings():
     if 'role' not in session or session['role'] != 'staff':
@@ -969,7 +1092,7 @@ def view_flight_ratings():
 
     if not staff_airline:
         cursor.close()
-        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+        return "Airline for Airline Staff Not Found."
     
     airline_name = staff_airline['Airline_Name']
 
@@ -1017,6 +1140,7 @@ def view_flight_ratings():
     return render_template('view_flight_ratings.html', 
                            flights=flight_info, airline_name=airline_name)
 
+# use case 8
 @app.route('/view_frequent_customer', methods=['GET', 'POST'])
 def view_frequent_customer():
     if 'role' not in session or session['role'] != 'staff':
@@ -1035,7 +1159,7 @@ def view_frequent_customer():
 
     if not staff_airline:
         cursor.close()
-        return "Error: Airline Staff does not work for any airline." # raise an error instead?
+        return "Airline for Airline Staff Not Found."
     
     airline_name = staff_airline['Airline_Name']
 
@@ -1063,9 +1187,6 @@ def view_frequent_customer():
     """
     cursor.execute(query_customers, (airline_name,))
     customers = cursor.fetchall()
-
-    # customer = request.args.get('email')
-    # customer_flights = None
 
     flight_data = []
     for customer in customers:
