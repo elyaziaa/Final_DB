@@ -26,7 +26,13 @@
 
     <hr>
 
-    <!-- Flight Search Section -->
+
+
+
+
+
+
+        <!-- Flight Search Section -->
     <div>
         <h2>Flight Search</h2>
         <form action="/search_flights" method="POST">
@@ -53,9 +59,56 @@
 
             <button type="submit">Search Flights</button>
         </form>
+
+        <!-- Flight Results Section -->
+<!-- Flight Results Section -->
+<!-- Flight Results Section -->
+        {% if flights or has_past_flights %}
+            {% if has_past_flights %}
+                <p style="color: red; font-weight: bold;">
+                    Note: This flight search will only display future flights, you entered a past flight!
+                </p>
+            {% endif %}
+            {% if flights %}
+                <h3>Search Results</h3>
+                <table border="1">
+                    <tr>
+                        <th>Flight Number</th>
+                        <th>Departure Date</th>
+                        <th>Departure Time</th>
+                        <th>Arrival Date</th>
+                        <th>Arrival Time</th>
+                        <th>Base Ticket Price</th>
+                        <th>Flight Status</th>
+                        <th>Airline Name</th>
+                        <th>Departure Code</th>
+                        <th>Arrival Code</th>
+                    </tr>
+                    {% for flight in flights %}
+                    <tr>
+                        <td>{{ flight['Flight_Num'] }}</td>
+                        <td>{{ flight['Departure_Date'] }}</td>
+                        <td>{{ flight['Departure_Time'] }}</td>
+                        <td>{{ flight['Arrival_Date'] }}</td>
+                        <td>{{ flight['Arrival_Time'] }}</td>
+                        <td>{{ flight['Base_Ticket_Price'] }}</td>
+                        <td>{{ flight['Flight_Status'] }}</td>
+                        <td>{{ flight['Airline_Name'] }}</td>
+                        <td>{{ flight['Departure_Code'] }}</td>
+                        <td>{{ flight['Arrival_Code'] }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            {% else %}
+                <p>...</p>
+            {% endif %}
+        {% else %}
+            <p>No flights match your search criteria.</p>
+        {% endif %}
+
+
     </div>
 
-    <hr>
 
     <!-- Check Flight Status Section -->
     <div>
@@ -79,41 +132,6 @@
             <button type="submit">Check Status</button>
         </form>
     </div>
-
-    <!-- Flight Results Section -->
-    {% if flights %}
-        <h2>Search Results</h2>
-        <table border="1">
-            <tr>
-                <th>Flight Number</th>
-                <th>Departure Date</th>
-                <th>Departure Time</th>
-                <th>Arrival Date</th>
-                <th>Arrival Time</th>
-                <th>Base Ticket Price</th>
-                <th>Flight Status</th>
-                <th>Airline Name</th>
-                <th>Departure Code</th>
-                <th>Arrival Code</th>
-            </tr>
-            {% for flight in flights %}
-            <tr>
-                <td>{{ flight['Flight_Num'] }}</td>
-                <td>{{ flight['Departure_Date'] }}</td>
-                <td>{{ flight['Departure_Time'] }}</td>
-                <td>{{ flight['Arrival_Date'] }}</td>
-                <td>{{ flight['Arrival_Time'] }}</td>
-                <td>{{ flight['Base_Ticket_Price'] }}</td>
-                <td>{{ flight['Flight_Status'] }}</td>
-                <td>{{ flight['Airline_Name'] }}</td>
-                <td>{{ flight['Departure_Code'] }}</td>
-                <td>{{ flight['Arrival_Code'] }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-    {% else %}
-        <p>No flights match your search criteria.</p>
-    {% endif %}
 
     <!-- Flight Status Results Section -->
     <h2>Flight Status Results</h2>
