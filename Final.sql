@@ -1,4 +1,3 @@
-
 CREATE TABLE Airport (
     Airport_Code CHAR(3) PRIMARY KEY,
     Airport_Name VARCHAR(100) NOT NULL,
@@ -10,9 +9,7 @@ CREATE TABLE Airport (
 
 CREATE TABLE Airline (
     Airline_Name VARCHAR(100),  
-    Airport_Code CHAR(3),       
-    PRIMARY KEY (Airline_Name, Airport_Code),  
-    FOREIGN KEY (Airport_Code) REFERENCES Airport(Airport_Code)  
+    PRIMARY KEY (Airline_Name)  
 );
 
 CREATE TABLE Flight (
@@ -47,19 +44,19 @@ CREATE TABLE Airplane (
     Manufacturing_Company VARCHAR(100),
     Model_Num VARCHAR(50),
     Manufacturing_Date DATE,
-    Age INT AS (YEAR(CURRENT_DATE) - YEAR(Manufacturing_Date)),  
+    Age INT,
+    -- Age INT AS (YEAR(CURRENT_DATE) - YEAR(Manufacturing_Date)),  
     PRIMARY KEY (Airline_Name, Airplane_ID),
     FOREIGN KEY (Airline_Name) REFERENCES Airline(Airline_Name)
 );
 
-CREATE UNIQUE INDEX idx_airplane_id ON Airplane(Airplane_ID);
+-- CREATE UNIQUE INDEX idx_airplane_id ON Airplane(Airplane_ID);
 
 CREATE TABLE Owns (
     Airline_Name VARCHAR(100),
     Airplane_ID INT,
     PRIMARY KEY (Airline_Name, Airplane_ID),
-    FOREIGN KEY (Airline_Name) REFERENCES Airline(Airline_Name),    
-    FOREIGN KEY (Airplane_ID) REFERENCES Airplane(Airplane_ID)
+    FOREIGN KEY (Airline_Name, Airplane_ID) REFERENCES Airplane(Airline_Name, Airplane_ID)
 );
 
 CREATE TABLE Maintenance_Procedure (
@@ -122,7 +119,7 @@ CREATE TABLE Payment_Info (
     Card_Type VARCHAR(20),
     Card_Number VARCHAR(20) PRIMARY KEY,
     Name_on_Card VARCHAR(100),
-    Expiration_Date 
+    Expiration_Date DATE
 );
 
 CREATE TABLE Seat_Availability (
@@ -138,7 +135,8 @@ CREATE TABLE Ticket (
     Flight_Num INT,
     Seat_Number VARCHAR(10),
     Date_of_Birth DATE,
-    Age INT AS (YEAR(CURRENT_DATE) - YEAR(Date_of_Birth)),
+    Age INT,
+    -- Age INT AS (YEAR(CURRENT_DATE) - YEAR(Date_of_Birth)),
     Sold_Price DECIMAL(10, 2),  
     Email VARCHAR(254),  -- Adding a reference to identify the customer
 
@@ -249,3 +247,4 @@ CREATE TABLE Purchase (
     PRIMARY KEY (Email, Ticket_ID),
     FOREIGN KEY (Email) REFERENCES Customer(Email),
     FOREIGN KEY (Ticket_ID) REFERENCES Ticket(Ticket_ID))
+
