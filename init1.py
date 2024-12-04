@@ -1,11 +1,13 @@
 
 
 
-from flask import Flask, render_template, request, session, url_for, redirect
+from flask import Flask, render_template, request, session, url_for, redirect, jsonify
 import pymysql.cursors
 import hashlib  # for MD5 hashing suggested in part 3
 from datetime import datetime, timedelta
-
+import matplotlib.pyplot as plt
+import io
+import base64
 
 app = Flask(__name__)
 conn = pymysql.connect(host='localhost',
@@ -250,70 +252,108 @@ def home():
 
 
 
-
-
-
 @app.route('/search_flights', methods=['POST'])
 def search_flights():
-   # Retrieve form data
-   departure_code = request.form['departure_code']
-   arrival_code = request.form['arrival_code']
-   trip_type = request.form['trip_type']
-   departure_date = request.form['departure_date']
-   return_date = request.form.get('return_date') if trip_type == 'round-trip' else None
-   target_page = request.form.get('target_page', 'index')  # Default to 'index'
+    try:
+        # Create DictCursor to get column names
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        
+        # Retrieve and validate form data
+        departure_code = request.form.get('departure_code', '').upper()
+        arrival_code = request.form.get('arrival_code', '').upper()
+        trip_type = request.form.get('trip_type')
+        departure_date = request.form.get('departure_date')
+        return_date = request.form.get('return_date')
+        target_page = request.form.get('target_page', 'index')
 
+        # Validate inputs
+        if not all([departure_code, arrival_code, trip_type, departure_date]):
+            return "Missing required search parameters", 400
 
-   cursor = conn.cursor()
+        # Validate airport codes exist
+        cursor.execute("""
+            SELECT Airport_Code FROM Airport 
+            WHERE Airport_Code IN (%s, %s)
+        """, (departure_code, arrival_code))
+        valid_airports = cursor.fetchall()
+        if len(valid_airports) != 2:
+            return "Invalid airport code(s)", 400
 
+        # Base query with JOIN to get more flight details
+        base_query = """
+            SELECT f.*, 
+                   dep.Airport_Name as Departure_Airport,
+                   arr.Airport_Name as Arrival_Airport
+            FROM Flight f
+            JOIN Airport dep ON f.Departure_Code = dep.Airport_Code
+            JOIN Airport arr ON f.Arrival_Code = arr.Airport_Code
+            WHERE f.Departure_Code = %s 
+            AND f.Arrival_Code = %s 
+            AND f.Departure_Date = %s
+            AND CONCAT(f.Departure_Date, ' ', f.Departure_Time) > NOW() -- Only future flights
+        """
+        
+        # Initialize parameters list
+        params = [departure_code, arrival_code, departure_date]
+        
+        # Construct query based on trip type
+        if trip_type == 'round-trip' and return_date:
+            query = base_query + """ 
+                UNION ALL 
+                """ + base_query.replace('f.Departure_Code = %s \nAND f.Arrival_Code = %s', 
+                                       'f.Departure_Code = %s \nAND f.Arrival_Code = %s')
+            params.extend([arrival_code, departure_code, return_date])
+        else:
+            query = base_query
 
-   # Query for one-way flights
-   query = '''
-       SELECT * FROM Flight
-       WHERE Departure_Code = %s AND Arrival_Code = %s AND Departure_Date = %s
-   '''
-   params = [departure_code, arrival_code, departure_date]
+        # Execute query
+        cursor.execute(query, params)
+        flights = cursor.fetchall()
 
+        # Process flights and check dates
+        current_time = datetime.now()
+        valid_flights = []
 
-   # If round-trip, add query for return flight
-   if trip_type == 'round-trip' and return_date:
-       query += ' UNION ALL SELECT * FROM Flight WHERE Departure_Code = %s AND Arrival_Code = %s AND Departure_Date = %s'
-       params.extend([arrival_code, departure_code, return_date])
+        for flight in flights:
+            flight_datetime_str = f"{flight['Departure_Date']} {flight['Departure_Time']}"
+            flight_datetime = datetime.strptime(flight_datetime_str, '%Y-%m-%d %H:%M:%S')
+            
+            if flight_datetime > current_time:  # Check if the flight departs after current time
+                valid_flights.append(flight)
 
+        # Get first name for customer_home template if needed
+        first_name = None
+        if target_page == 'customer_home' and 'email' in session:
+            cursor.execute("""
+                SELECT First_Name FROM Customer 
+                WHERE Email = %s
+            """, (session['email'],))
+            result = cursor.fetchone()
+            if result:
+                first_name = result['First_Name']
 
-   cursor.execute(query, params)
-   flights = cursor.fetchall()
-   cursor.close()
+        # Return appropriate template
+        if target_page == 'customer_home':
+            return render_template('customer_home.html', 
+                                 flights=valid_flights, 
+                                 first_name=first_name)
+        elif target_page == 'index':
+            return render_template('index.html', 
+                                 flights=valid_flights)
+        else:
+            return "Invalid target page", 404
 
-
-   # Add a flag for past flights and filter them out
-   current_date = datetime.now().date()
-   valid_flights = []
-   has_past_flights = False
-
-
-   for flight in flights:
-       flight_data = dict(flight)  # Convert to a dictionary for easier manipulation
-       flight_date = flight_data['Departure_Date']  # Assuming this is already a datetime.date
-       if flight_date < current_date:
-           has_past_flights = True
-       else:
-           valid_flights.append(flight_data)
-
-
-   # Render the appropriate template based on the target_page
-   if target_page == 'index':
-       return render_template('index.html', flights=valid_flights, has_past_flights=has_past_flights)
-   elif target_page == 'customer_home':
-       return render_template('customer_home.html', flights=valid_flights, has_past_flights=has_past_flights)
-   else:
-       return "Page not found", 404
-
-
-
-
-
-
+    except pymysql.Error as e:
+        print(f"Database error: {str(e)}")
+        return "An error occurred while searching flights", 500
+        
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        return "An unexpected error occurred", 500
+        
+    finally:
+        if cursor:
+            cursor.close()
 
 
 
@@ -595,37 +635,53 @@ def view_flights():
     if 'email' not in session:  # Ensure the user is logged in
         return redirect(url_for('login'))
 
-    email = session['email']  # Get the logged-in user's email
-    first_name = session.get('first_name', 'Guest')  # Retrieve first name from session
-    query_type = request.args.get('type', 'future')  # Get the query type (future/past)
+    email = session['email']
+    first_name = session.get('first_name', 'Guest')
+    query_type = request.args.get('type', 'future')
 
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            # Fetch flights (future or past based on query type)
+            # Updated queries to include ticket ID and more detailed flight information
             if query_type == 'past':
                 query = """
-                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, f.Arrival_Date, f.Arrival_Time,
-                           f.Departure_Code, f.Arrival_Code, f.Airline_Name, f.Base_Ticket_Price, f.Flight_Status, t.Sold_Price
+                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, 
+                           f.Arrival_Date, f.Arrival_Time,
+                           f.Departure_Code, f.Arrival_Code, 
+                           dep.Airport_Name as Departure_Airport,
+                           arr.Airport_Name as Arrival_Airport,
+                           f.Airline_Name, f.Base_Ticket_Price, 
+                           f.Flight_Status, t.Sold_Price,
+                           t.Ticket_ID, t.Seat_Number
                     FROM Flight f
                     JOIN Ticket t ON f.Flight_Num = t.Flight_Num
                     JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
+                    JOIN Airport dep ON f.Departure_Code = dep.Airport_Code
+                    JOIN Airport arr ON f.Arrival_Code = arr.Airport_Code
                     WHERE p.Email = %s AND f.Departure_Date < CURDATE()
-                    ORDER BY f.Departure_Date DESC
+                    ORDER BY f.Departure_Date DESC, f.Departure_Time DESC
                 """
             else:
                 query = """
-                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, f.Arrival_Date, f.Arrival_Time,
-                           f.Departure_Code, f.Arrival_Code, f.Airline_Name, f.Base_Ticket_Price, f.Flight_Status, t.Sold_Price
+                    SELECT f.Flight_Num, f.Departure_Date, f.Departure_Time, 
+                           f.Arrival_Date, f.Arrival_Time,
+                           f.Departure_Code, f.Arrival_Code, 
+                           dep.Airport_Name as Departure_Airport,
+                           arr.Airport_Name as Arrival_Airport,
+                           f.Airline_Name, f.Base_Ticket_Price, 
+                           f.Flight_Status, t.Sold_Price,
+                           t.Ticket_ID, t.Seat_Number
                     FROM Flight f
                     JOIN Ticket t ON f.Flight_Num = t.Flight_Num
                     JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
+                    JOIN Airport dep ON f.Departure_Code = dep.Airport_Code
+                    JOIN Airport arr ON f.Arrival_Code = arr.Airport_Code
                     WHERE p.Email = %s AND f.Departure_Date >= CURDATE()
-                    ORDER BY f.Departure_Date ASC
+                    ORDER BY f.Departure_Date ASC, f.Departure_Time ASC
                 """
             cursor.execute(query, (email,))
             flights = cursor.fetchall()
 
-            # Fetch flights eligible for rating
+            # Keep the existing query for flights to rate
             cursor.execute("""
                 SELECT DISTINCT f.Flight_Num,
                        f.Departure_Code,
@@ -646,7 +702,7 @@ def view_flights():
         return render_template(
             'customer_home.html',
             flights=flights,
-            flights_to_rate=flights_to_rate,  # Pass flights available for rating
+            flights_to_rate=flights_to_rate,
             query_type=query_type,
             first_name=first_name
         )
@@ -655,164 +711,224 @@ def view_flights():
         return redirect(url_for('customer_home'))
 
 
-
-
+@app.route('/select_seat/<flight_num>')
+def select_seat(flight_num):
+    cursor = None
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        
+        # Get seats and their availability
+        cursor.execute("""
+            SELECT Seat_Number, Is_Available
+            FROM Seat_Availability
+            WHERE Flight_Num = %s
+        """, (flight_num,))
+        
+        seats = cursor.fetchall()
+        
+        if not seats:
+            return jsonify({'error': 'No seats found for this flight'})
+            
+        return jsonify({'seats': seats})
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return jsonify({'error': 'An error occurred while loading seats'})
+        
+    finally:
+        if cursor:
+            cursor.close()
 
 
 
 
 @app.route('/purchase_ticket', methods=['POST'])
 def purchase_ticket():
-   # Initialize variables to track database connections and ticket
-   cursor = None
-   ticket_id = None
+    cursor = None
+    ticket_id = None
 
+    try:
+        # Step 1: Get Ticket Information from Form
+        flight_num = request.form['flight_num']
+        seat_number = request.form['seat_number']
+        card_number = request.form['card_number']
+        email = session['email']
 
+        # Create a database cursor
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        # Step 2: Validate Flight and check if departure time hasn't passed
+        cursor.execute("""
+            SELECT * FROM Flight
+            WHERE Flight_Num = %s 
+            AND (
+                (Departure_Date > CURRENT_DATE) OR 
+                (Departure_Date = CURRENT_DATE AND Departure_Time > CURRENT_TIME)
+            )
+        """, (flight_num,))
+        flight = cursor.fetchone()
+
+        if not flight:
+            return "Sorry, this flight has already departed or is not available", 400
+
+        # Rest of your code remains the same...
+        cursor.execute("""
+            SELECT Date_of_Birth, First_Name, Last_Name
+            FROM Customer
+            WHERE Email = %s
+        """, (email,))
+        customer = cursor.fetchone()
+
+        cursor.execute("""
+            SELECT Is_Available FROM Seat_Availability
+            WHERE Flight_Num = %s AND Seat_Number = %s
+        """, (flight_num, seat_number))
+        seat = cursor.fetchone()
+
+        if not seat or not seat['Is_Available']:
+            return "Sorry, this seat is not available", 400
+
+        conn.begin()
+
+        cursor.execute("""
+            INSERT IGNORE INTO Payment_Info (Card_Number, Card_Type, Name_on_Card, Expiration_Date)
+            VALUES (%s, 'Credit', %s, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR))
+        """, (card_number, customer['First_Name'] + ' ' + customer['Last_Name']))
+
+        cursor.execute("SELECT MAX(Ticket_ID) FROM Ticket")
+        last_ticket_id = cursor.fetchone()['MAX(Ticket_ID)']
+        ticket_id = last_ticket_id + 1 if last_ticket_id else 1
+
+        cursor.execute("""
+            INSERT INTO Ticket
+            (Ticket_ID, Flight_Num, Seat_Number, Date_of_Birth, Email)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (ticket_id, flight_num, seat_number, customer['Date_of_Birth'], email))
+
+        cursor.execute("""
+            UPDATE Seat_Availability
+            SET Is_Available = FALSE
+            WHERE Flight_Num = %s AND Seat_Number = %s
+        """, (flight_num, seat_number))
+
+        cursor.execute("""
+            INSERT INTO Purchase
+            (Email, Ticket_ID, Purchase_Date, Purchase_Time,
+             First_Name, Last_Name, Date_of_Birth)
+            VALUES (%s, %s, CURRENT_DATE, CURRENT_TIME, %s, %s, %s)
+        """, (email, ticket_id,
+               customer['First_Name'],
+               customer['Last_Name'],
+               customer['Date_of_Birth']))
+
+        cursor.execute("""
+            INSERT INTO Booked
+            (Email, Ticket_ID, Payment_Card_Number)
+            VALUES (%s, %s, %s)
+        """, (email, ticket_id, card_number))
+
+        conn.commit()
+        return redirect('/customer_home')
+
+    except KeyError as e:
+        return f"Missing information: {str(e)}", 400
+
+    except pymysql.Error as err:
+        if conn:
+            conn.rollback()
+        print(f"Database error: {err}")
+        return "Error processing ticket purchase", 500
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"Unexpected error: {e}")
+        return "An unexpected error occurred", 500
+
+    finally:
+        if cursor:
+            cursor.close()
+
+@app.route('/track_spending', methods=['GET', 'POST'])
+def track_spending():
+   if 'email' not in session:
+       return redirect(url_for('login'))
+   
    try:
-       # Step 1: Get Ticket Information from Form
-       # Retrieve details submitted by user
-       flight_num = request.form['flight_num']
-       seat_number = request.form['seat_number']
-       card_number = request.form['card_number']
+       with conn.cursor() as cursor:
+           base_query = """
+               SELECT MONTHNAME(p.Purchase_Date) as month_year, 
+                      SUM(t.Sold_Price) as monthly_spent
+               FROM Purchase p
+               JOIN Ticket t ON p.Ticket_ID = t.Ticket_ID 
+               WHERE p.Email = %s
+           """
+           
+           if request.method == 'GET':
+               query = base_query + """
+                   AND p.Purchase_Date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+                   GROUP BY month_year, MONTH(p.Purchase_Date)
+                   ORDER BY p.Purchase_Date DESC
+                   LIMIT 6
+               """
+               cursor.execute(query, (session['email'],))
+           else:
+               start_date = request.form.get('start_date')
+               end_date = request.form.get('end_date')
+               query = base_query + """
+                   AND p.Purchase_Date BETWEEN %s AND %s
+                   GROUP BY month_year, MONTH(p.Purchase_Date)
+                   ORDER BY p.Purchase_Date DESC
+               """
+               cursor.execute(query, (session['email'], start_date, end_date))
 
+           result = cursor.fetchall()
+           total_spent = sum(float(row['monthly_spent']) for row in result) if result else 0
+           
+           if not result:
+               spending_data = []
+           else:
+               max_spent = max(float(row['monthly_spent']) for row in result)
+               spending_data = [{
+                   'month': row['month_year'],
+                   'amount': float(row['monthly_spent']),
+                   'height': (float(row['monthly_spent']) / max_spent) * 100 if max_spent > 0 else 0
+               } for row in result]
 
+           if request.method == 'GET':
+               return render_template('customer_home.html', 
+                                   total_spent=total_spent,
+                                   spending_data=spending_data,
+                                   first_name=session.get('first_name'))
 
-
-       email = session['email']
-
-
-       # Create a database cursor to interact with the database
-       cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-
-       # Step 2: Validate Flight
-       # Check if flight exists and is in the future
-       cursor.execute("""
-           SELECT * FROM Flight
-           WHERE Flight_Num = %s AND Departure_Date >= CURRENT_DATE
-       """, (flight_num,))
-       flight = cursor.fetchone()
-
-
-       if not flight:
-           return "Sorry, tickets for this flight are not available", 400
-
-
-       # Step 3: Get Customer Details
-       # Retrieve customer information from database
-       cursor.execute("""
-           SELECT Date_of_Birth, First_Name, Last_Name
-           FROM Customer
-           WHERE Email = %s
-       """, (email,))
-       customer = cursor.fetchone()
-
-
-
-
-       # Step 4: Check Seat Availability
-       cursor.execute("""
-           SELECT Is_Available FROM Seat_Availability
-           WHERE Flight_Num = %s AND Seat_Number = %s
-       """, (flight_num, seat_number))
-       seat = cursor.fetchone()
-
-
-       if not seat or not seat['Is_Available']:
-           return "Sorry, this seat is not available", 400
-
-
-       # Step 5: Validate Payment Method
-       cursor.execute("""
-           SELECT Card_Number FROM Payment_Info pi
-           JOIN Booked b ON pi.Card_Number = b.Payment_Card_Number
-           WHERE b.Email = %s AND pi.Card_Number = %s
-       """, (email, card_number))
-       payment_card = cursor.fetchone()
-
-
-       if not payment_card:
-           return "Invalid card details", 400
-
-
-       # Start a database transaction
-       conn.begin()
-
-
-       # Generate a new Ticket ID
-       cursor.execute("SELECT MAX(Ticket_ID) FROM Ticket")
-       last_ticket_id = cursor.fetchone()['MAX(Ticket_ID)']
-       ticket_id = last_ticket_id + 1 if last_ticket_id else 1
-
-
-       # Step 6: Create Ticket Record
-       cursor.execute("""
-           INSERT INTO Ticket
-           (Ticket_ID, Flight_Num, Seat_Number, Date_of_Birth, Email)
-           VALUES (%s, %s, %s, %s, %s)
-       """, (ticket_id, flight_num, seat_number, customer['Date_of_Birth'], email))
-
-
-       # Step 7: Update Seat Availability
-       cursor.execute("""
-           UPDATE Seat_Availability
-           SET Is_Available = FALSE
-           WHERE Flight_Num = %s AND Seat_Number = %s
-       """, (flight_num, seat_number))
-
-
-       # Step 8: Record Purchase Details
-       cursor.execute("""
-           INSERT INTO Purchase
-           (Email, Ticket_ID, Purchase_Date, Purchase_Time,
-            First_Name, Last_Name, Date_of_Birth)
-           VALUES (%s, %s, CURRENT_DATE, CURRENT_TIME, %s, %s, %s)
-       """, (email, ticket_id,
-              customer['First_Name'],
-              customer['Last_Name'],
-              customer['Date_of_Birth']))
-
-
-       # Step 9: Record Booking Information
-       cursor.execute("""
-           INSERT INTO Booked
-           (Email, Ticket_ID, Payment_Card_Number)
-           VALUES (%s, %s, %s)
-       """, (email, ticket_id, card_number))
-
-
-       # Confirm all database changes
-       conn.commit()
-
-
-       # Redirect to home page after successful purchase
-       return redirect('/customer_home')
-
-
-   except KeyError as e:
-       return f"Missing information: {str(e)}", 400
-
-
-   except pymysql.Error as err:
-       # If database transaction fails, undo changes
-       if conn:
-           conn.rollback()
-       print(f"Database error: {err}")
-       return "Error processing ticket purchase", 500
-
+           return jsonify({
+               'total_spent': total_spent,
+               'spending_data': spending_data
+           })
 
    except Exception as e:
-       # Handle any unexpected errors
-       if conn:
-           conn.rollback()
-       print(f"Unexpected error: {e}")
-       return "An unexpected error occurred", 500
+       print(f"Error: {str(e)}")
+       return jsonify({'error': str(e)})
+def create_bar_chart(x, y, xlabel, ylabel, title):
+    """Generates a bar chart and returns its URL as a base64 string."""
+    plt.figure(figsize=(10, 6))
+    plt.bar(x, y, color='blue', alpha=0.7)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.xticks(rotation=45)
+
+    # Save the chart to a buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    buf.close()
+    plt.close()
+
+    return f"data:image/png;base64,{chart_base64}"
 
 
-   finally:
-       # Always close database cursor
-       if cursor:
-           cursor.close()
 
 
 # ----------suha------------------ #
