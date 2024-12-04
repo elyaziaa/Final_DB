@@ -7,15 +7,13 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import io
 import base64
-
 app = Flask(__name__)
-conn = pymysql.connect(host='127.0.0.1',
-                       user='root',
-                       password='root',
-                       port=8889,
-                       db='airplane_updated',
-                       charset='utf8mb4',
-                       cursorclass=pymysql.cursors.DictCursor)
+conn = pymysql.connect(host='localhost',
+                      user='root',
+                      password='',
+                      db='Suha-Test',
+                      charset='utf8mb4',
+                      cursorclass=pymysql.cursors.DictCursor)
 
 @app.route('/')
 def hello():
@@ -605,159 +603,132 @@ def view_flights():
 
 
 
-
-
 @app.route('/purchase_ticket', methods=['POST'])
 def purchase_ticket():
-   # Initialize variables to track database connections and ticket
-   cursor = None
-   ticket_id = None
+    # Initialize variables to track database connections and ticket
+    cursor = None
+    ticket_id = None
 
+    try:
+        # Step 1: Get Ticket Information from Form
+        # Retrieve details submitted by user
+        flight_num = request.form['flight_num']
+        seat_number = request.form['seat_number']
+        card_number = request.form['card_number']
+        email = session['email']
 
-   try:
-       # Step 1: Get Ticket Information from Form
-       # Retrieve details submitted by user
-       flight_num = request.form['flight_num']
-       seat_number = request.form['seat_number']
-       card_number = request.form['card_number']
+        # Create a database cursor to interact with the database
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
 
+        # Step 2: Validate Flight
+        # Check if flight exists and is in the future
+        cursor.execute("""
+            SELECT * FROM Flight
+            WHERE Flight_Num = %s AND Departure_Date >= CURRENT_DATE
+        """, (flight_num,))
+        flight = cursor.fetchone()
 
+        if not flight:
+            return "Sorry, tickets for this flight are not available", 400
 
+        # Step 3: Get Customer Details
+        # Retrieve customer information from database
+        cursor.execute("""
+            SELECT Date_of_Birth, First_Name, Last_Name
+            FROM Customer
+            WHERE Email = %s
+        """, (email,))
+        customer = cursor.fetchone()
 
-       email = session['email']
-
-
-       # Create a database cursor to interact with the database
-       cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-
-       # Step 2: Validate Flight
-       # Check if flight exists and is in the future
-       cursor.execute("""
-           SELECT * FROM Flight
-           WHERE Flight_Num = %s AND Departure_Date >= CURRENT_DATE
-       """, (flight_num,))
-       flight = cursor.fetchone()
-
-
-       if not flight:
-           return "Sorry, tickets for this flight are not available", 400
-
-
-       # Step 3: Get Customer Details
-       # Retrieve customer information from database
-       cursor.execute("""
-           SELECT Date_of_Birth, First_Name, Last_Name
-           FROM Customer
-           WHERE Email = %s
-       """, (email,))
-       customer = cursor.fetchone()
-
-
-
-
-       # Step 4: Check Seat Availability
-       cursor.execute("""
-           SELECT Is_Available FROM Seat_Availability
-           WHERE Flight_Num = %s AND Seat_Number = %s
-       """, (flight_num, seat_number))
-       seat = cursor.fetchone()
-
+        # Step 4: Check Seat Availability
+        cursor.execute("""
+            SELECT Is_Available FROM Seat_Availability
+            WHERE Flight_Num = %s AND Seat_Number = %s
+        """, (flight_num, seat_number))
+        seat = cursor.fetchone()
 
         if not seat or not seat['Is_Available']:
             return "Sorry, this seat is not available", 400
 
+        # Step 5: Validate Payment Method
+        cursor.execute("""
+            SELECT Card_Number FROM Payment_Info pi
+            JOIN Booked b ON pi.Card_Number = b.Payment_Card_Number
+            WHERE b.Email = %s AND pi.Card_Number = %s
+        """, (email, card_number))
+        payment_card = cursor.fetchone()
 
-       # Step 5: Validate Payment Method
-       cursor.execute("""
-           SELECT Card_Number FROM Payment_Info pi
-           JOIN Booked b ON pi.Card_Number = b.Payment_Card_Number
-           WHERE b.Email = %s AND pi.Card_Number = %s
-       """, (email, card_number))
-       payment_card = cursor.fetchone()
+        if not payment_card:
+            return "Invalid card details", 400
 
+        # Start a database transaction
+        conn.begin()
 
-       if not payment_card:
-           return "Invalid card details", 400
+        # Generate a new Ticket ID
+        cursor.execute("SELECT MAX(Ticket_ID) FROM Ticket")
+        last_ticket_id = cursor.fetchone()['MAX(Ticket_ID)']
+        ticket_id = last_ticket_id + 1 if last_ticket_id else 1
 
+        # Step 6: Create Ticket Record
+        cursor.execute("""
+            INSERT INTO Ticket
+            (Ticket_ID, Flight_Num, Seat_Number, Date_of_Birth, Email)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (ticket_id, flight_num, seat_number, customer['Date_of_Birth'], email))
 
-       # Start a database transaction
-       conn.begin()
+        # Step 7: Update Seat Availability
+        cursor.execute("""
+            UPDATE Seat_Availability
+            SET Is_Available = FALSE
+            WHERE Flight_Num = %s AND Seat_Number = %s
+        """, (flight_num, seat_number))
 
+        # Step 8: Record Purchase Details
+        cursor.execute("""
+            INSERT INTO Purchase
+            (Email, Ticket_ID, Purchase_Date, Purchase_Time,
+             First_Name, Last_Name, Date_of_Birth)
+            VALUES (%s, %s, CURRENT_DATE, CURRENT_TIME, %s, %s, %s)
+        """, (email, ticket_id,
+               customer['First_Name'],
+               customer['Last_Name'],
+               customer['Date_of_Birth']))
 
-       # Generate a new Ticket ID
-       cursor.execute("SELECT MAX(Ticket_ID) FROM Ticket")
-       last_ticket_id = cursor.fetchone()['MAX(Ticket_ID)']
-       ticket_id = last_ticket_id + 1 if last_ticket_id else 1
+        # Step 9: Record Booking Information
+        cursor.execute("""
+            INSERT INTO Booked
+            (Email, Ticket_ID, Payment_Card_Number)
+            VALUES (%s, %s, %s)
+        """, (email, ticket_id, card_number))
 
+        # Confirm all database changes
+        conn.commit()
 
-       # Step 6: Create Ticket Record
-       cursor.execute("""
-           INSERT INTO Ticket
-           (Ticket_ID, Flight_Num, Seat_Number, Date_of_Birth, Email)
-           VALUES (%s, %s, %s, %s, %s)
-       """, (ticket_id, flight_num, seat_number, customer['Date_of_Birth'], email))
-
-
-       # Step 7: Update Seat Availability
-       cursor.execute("""
-           UPDATE Seat_Availability
-           SET Is_Available = FALSE
-           WHERE Flight_Num = %s AND Seat_Number = %s
-       """, (flight_num, seat_number))
-
-
-       # Step 8: Record Purchase Details
-       cursor.execute("""
-           INSERT INTO Purchase
-           (Email, Ticket_ID, Purchase_Date, Purchase_Time,
-            First_Name, Last_Name, Date_of_Birth)
-           VALUES (%s, %s, CURRENT_DATE, CURRENT_TIME, %s, %s, %s)
-       """, (email, ticket_id,
-              customer['First_Name'],
-              customer['Last_Name'],
-              customer['Date_of_Birth']))
-
-
-       # Step 9: Record Booking Information
-       cursor.execute("""
-           INSERT INTO Booked
-           (Email, Ticket_ID, Payment_Card_Number)
-           VALUES (%s, %s, %s)
-       """, (email, ticket_id, card_number))
-
-
-       # Confirm all database changes
-       conn.commit()
-
-
-       # Redirect to home page after successful purchase
-       return redirect('/customer_home')
+        # Redirect to home page after successful purchase
+        return redirect('/customer_home')
 
     except KeyError as e:
         return f"Missing information: {str(e)}", 400
 
+    except pymysql.Error as err:
+        # If database transaction fails, undo changes
+        if conn:
+            conn.rollback()
+        print(f"Database error: {err}")
+        return "Error processing ticket purchase", 500
 
-   except pymysql.Error as err:
-       # If database transaction fails, undo changes
-       if conn:
-           conn.rollback()
-       print(f"Database error: {err}")
-       return "Error processing ticket purchase", 500
+    except Exception as e:
+        # Handle any unexpected errors
+        if conn:
+            conn.rollback()
+        print(f"Unexpected error: {e}")
+        return "An unexpected error occurred", 500
 
+    finally:
+        # Always close database cursor
+        if cursor:
+            cursor.close()
 
-   except Exception as e:
-       # Handle any unexpected errors
-       if conn:
-           conn.rollback()
-       print(f"Unexpected error: {e}")
-       return "An unexpected error occurred", 500
-
-
-   finally:
-       # Always close database cursor
-       if cursor:
-           cursor.close()
 
 
 # ----------suha------------------ #
