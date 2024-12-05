@@ -149,43 +149,6 @@ CREATE TABLE Ticket (
 
 
 
-
-DELIMITER //
-
-CREATE TRIGGER set_sold_price -- Here we are creating a trigger that automatically calculates the ticket price before its inserted in the ticket table
-BEFORE INSERT ON Ticket
-FOR EACH ROW
-BEGIN
-    DECLARE seat_count INT;
-    DECLARE capacity INT;
-    DECLARE base_price DECIMAL(10, 2);
-
-    -- first we use count to get the current number of booked seats
-    SELECT COUNT(*) INTO seat_count
-    FROM Ticket
-    WHERE Flight_Num = NEW.Flight_Num;
-
-    -- next we get the seat cap using Number_of_seats
-    SELECT Number_of_Seats INTO capacity
-    FROM Airplane a
-    JOIN Flight f ON a.Airplane_ID = f.Flight_Num
-    WHERE f.Flight_Num = NEW.Flight_Num;
-
-    -- retrieving the base price
-    SELECT Base_Ticket_Price INTO base_price
-    FROM Flight
-    WHERE Flight_Num = NEW.Flight_Num;
-
-    -- finally calculating the sold price based on the cap we retrieved 
-    IF seat_count >= capacity * 0.8 THEN
-        SET NEW.Sold_Price = base_price * 1.25;
-    ELSE
-        SET NEW.Sold_Price = base_price;
-    END IF;
-END //
-
-DELIMITER ;
-
 CREATE TABLE Booked (
     Email VARCHAR(100),
     Ticket_ID INT,

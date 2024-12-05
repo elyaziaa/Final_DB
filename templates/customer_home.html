@@ -5,50 +5,55 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Customer Home</title>
         <style>
-            /* Bar chart styles */
-            .chart {
-                display: flex;
-                align-items: flex-end;
-                height: 300px;
-                padding: 20px;
-                margin: 20px 0;
-                background: #f5f5f5;
-                border-radius: 8px;
-                gap: 20px;
-                justify-content: space-around;
-            }
-    
-            .bar-container {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                min-width: 60px;
-            }
-    
-            .bar {
+            /* Existing Bar chart styles */
+            /* ... (keep your existing chart styles) ... */
+        
+            /* Add Table Styles */
+            .spending-table {
                 width: 100%;
-                background-color: #4f46e5;
-                transition: height 0.3s;
-                border-radius: 4px 4px 0 0;
-                position: relative;
-                min-height: 1px;
+                border-collapse: collapse;
+                margin: 20px 0;
             }
-    
-            .amount {
-                position: absolute;
-                top: -25px;
-                left: 0;
-                right: 0;
+        
+            .spending-table th,
+            .spending-table td {
+                border: 1px solid #ddd;
+                padding: 12px;
                 text-align: center;
-                font-size: 12px;
             }
-    
-            .month {
-                margin-top: 10px;
-                font-size: 12px;
-                transform: rotate(-45deg);
-                text-align: center;
-                white-space: nowrap;
+        
+            .spending-table th {
+                background-color: #f5f5f5;
+                font-weight: bold;
+            }
+        
+            .spending-table tr:nth-child(even) {
+                background-color: #fafafa;
+            }
+        
+            .total-amount {
+                font-size: 24px;
+                font-weight: bold;
+                color: #333;
+                margin: 10px 0;
+            }
+        
+            .spending-section {
+                margin: 20px 0;
+                padding: 20px;
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+        
+            .form-group {
+                margin: 20px 0;
+            }
+        
+            .form-group input,
+            .form-group button {
+                margin: 0 10px;
+                padding: 8px;
             }
         </style>
     </head>
@@ -76,6 +81,7 @@
             <th>Arrival Time</th>
             <th>Status</th>
             <th>Ticket ID</th>
+            <th>Sold Price</th>
         </tr>
         {% for flight in flights %}
         <tr>
@@ -88,6 +94,7 @@
             <td>{{ flight['Arrival_Time'] }}</td>
             <td>{{ flight['Flight_Status'] }}</td>
             <td>{{ flight['Ticket_ID'] }}</td>
+            <td>${{ '%.2f' | format(flight['Sold_Price']) }}</td>
         </tr>
         {% endfor %}
     </table>
@@ -105,6 +112,7 @@
             <th>Arrival Date</th>
             <th>Status</th>
             <th>Ticket ID</th>
+            <th>Sold Price</th>
         </tr>
         {% for flight in flights %}
         <tr>
@@ -115,6 +123,7 @@
             <td>{{ flight['Arrival_Date'] }}</td>
             <td>{{ flight['Flight_Status'] }}</td>
             <td>{{ flight['Ticket_ID'] }}</td>
+            <td>${{ '%.2f' | format(flight['Sold_Price']) }}</td>
         </tr>
         {% endfor %}
     </table>
@@ -207,21 +216,39 @@
        <div id="seatsList"></div>
    </div>
 
-   <!-- Purchase Tickets Section -->
-   <hr>
-   <h2>Purchase Tickets</h2>
-   <form action="/purchase_ticket" method="POST">
-       <label for="flight_num">Flight Number:</label>
-       <input type="number" id="flight_num" name="flight_num" required><br><br>
+<!-- Purchase Tickets Section -->
+<hr>
+<h2>Purchase Tickets</h2>
+<form action="/purchase_ticket" method="POST">
+    <label for="flight_num">Flight Number:</label>
+    <input type="number" id="flight_num" name="flight_num" required><br><br>
 
-       <label for="seat_number">Seat Number:</label>
-       <input type="text" id="seat_number" name="seat_number" required><br><br>
+    <label for="seat_number">Seat Number:</label>
+    <input type="text" id="seat_number" name="seat_number" required><br><br>
 
-       <label for="card_number">Payment Card Number:</label>
-       <input type="text" id="card_number" name="card_number" required><br><br>
+    <h3>Payment Information</h3>
+    <label for="card_type">Card Type:</label>
+    <select id="card_type" name="card_type" required>
+        <option value="">Select Card Type</option>
+        <option value="Credit">Credit</option>
+        <option value="Debit">Debit</option>
+    </select><br><br>
 
-       <button type="submit">Purchase Ticket</button>
-   </form>
+    <label for="card_number">Card Number:</label>
+    <input type="text" id="card_number" name="card_number" required><br><br>
+
+    <label for="name_on_card">Name on Card:</label>
+    <input type="text" id="name_on_card" name="name_on_card" required><br><br>
+
+    <label for="expiration_date">Expiration Date:</label>
+    <input type="text" id="expiration_date" name="expiration_date" required 
+           placeholder="MM/YY"><br><br>
+
+    <label for="security_code">Security Code (CVV):</label>
+    <input type="password" id="security_code" name="security_code" required><br><br>
+
+    <button type="submit">Purchase Ticket</button>
+</form>
 
    <hr>
    <!-- Cancel Trip Section -->
@@ -327,74 +354,65 @@
 
     
     <hr>
+    <hr>
+    <hr>
+<div class="spending-section">
     <h2>Track My Spending</h2>
-<div id="defaultSpendingView">
-    <h3>Last 6 Months Spending</h3>
-    <p>Total Spent: ${{ '%.2f' | format(total_spent) if total_spent else '0.00' }}</p>
     
-    <div class="chart">
-        {% for data in spending_data %}
-        <div class="bar-container">
-            <div class="bar" style="height: {{ data.height }}%">
-                <span class="amount">${{ '%.2f' | format(data.amount) }}</span>
-            </div>
-            <span class="month">{{ data.month }}</span>
-        </div>
-        {% endfor %}
+    <!-- Default View -->
+    <div class="spending-summary">
+        <h3>Total Spending in the Last Year</h3>
+        <p class="total-amount">${{ '%.2f' | format(total_spent_last_year) if total_spent_last_year else '0.00' }}</p>
+        
+        <h3>Month-wise Spending (Last 6 Months Note: Displayed ONLY if you made a purchase in that month)</h3>
+        <table class="spending-table">
+            <tr>
+                {% for row in last_6_months_spending %}
+                    <th>{{ row.Month }}</th>
+                {% endfor %}
+            </tr>
+            <tr>
+                {% for row in last_6_months_spending %}
+                    <td>${{ '%.2f' | format(row.Total_Spent) if row.Total_Spent else '0.00' }}</td>
+                {% endfor %}
+            </tr>
+        </table>
     </div>
-</div>
 
-<form action="/track_spending" method="POST" id="spendingForm">
-    <label for="start_date">Start Date:</label>
-    <input type="date" id="start_date" name="start_date" required><br><br>
-    
-    <label for="end_date">End Date:</label>
-    <input type="date" id="end_date" name="end_date" required><br><br>
-    
-    <button type="submit">View Spending</button>
-</form>
+    <!-- Range-Based View -->
+    <div class="custom-range">
+        <h3>View Spending for a Date Range</h3>
+        <form action="/track_spending" method="POST">
+            <div class="form-group">
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" name="start_date" required>
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" name="end_date" required>
+                <button type="submit">View Custom Range</button>
+            </div>
+        </form>
 
-<div id="customDateSpending"></div>
+        {% if total_spent_range %}
+        <div class="range-results">
+            <h3>Total Spending from {{ start_date }} to {{ end_date }}</h3>
+            <p class="total-amount">${{ '%.2f' | format(total_spent_range) }}</p>
 
-<script>
-document.getElementById('spendingForm').onsubmit = function(e) {
-    e.preventDefault();
-    fetch('/track_spending', {
-        method: 'POST',
-        body: new FormData(this)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert(data.error);
-            return;
-        }
-        displaySpendingData(data);
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error fetching spending data');
-    });
-};
-
-function displaySpendingData(data) {
-    const resultDiv = document.getElementById('customDateSpending');
-    resultDiv.innerHTML = `
-        <h3>Custom Date Range Spending</h3>
-        <p>Total Spent: $${data.total_spent.toFixed(2)}</p>
-        <div class="chart">
-            ${data.spending_data.map(data => `
-                <div class="bar-container">
-                    <div class="bar" style="height: ${data.height}%">
-                        <span class="amount">$${data.amount.toFixed(2)}</span>
-                    </div>
-                    <span class="month">${data.month}</span>
-                </div>
-            `).join('')}
+            <h3>Month-wise Spending in Date Range</h3>
+            <table class="spending-table">
+                <tr>
+                    {% for row in range_month_wise_spending %}
+                        <th>{{ row.Month }}</th>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    {% for row in range_month_wise_spending %}
+                        <td>${{ '%.2f' | format(row.Total_Spent) if row.Total_Spent else '0.00' }}</td>
+                    {% endfor %}
+                </tr>
+            </table>
         </div>
-    `;
-}
-</script>
+        {% endif %}
+    </div>
 
 </body>
 </html>
