@@ -1,3 +1,5 @@
+
+
 CREATE TABLE Airport (
     Airport_Code CHAR(3) PRIMARY KEY,
     Airport_Name VARCHAR(100) NOT NULL,
@@ -144,7 +146,6 @@ CREATE TABLE Ticket (
     FOREIGN KEY (Flight_Num) REFERENCES Flight(Flight_Num),
     FOREIGN KEY (Email) REFERENCES Customer(Email)
 );
-
 
 
 

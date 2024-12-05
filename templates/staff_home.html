@@ -4,53 +4,21 @@
     <title>Airline Staff Home</title>
 </head>
 <body>
-    <h1>Welcome, {{ first_name }}!</h1>
     <a href="/logout">Logout</a>
-    <h1>Flights Operated by {{ airline_name }}</h1>
+    <h1>Welcome, {{ first_name }}!</h1>
+    <h2>{{ first_name }} Works For {{ airline_name }}</h2>
 
     <hr>
 
-         <!-- Display Flights -->
-         <h2>Flights (Default)</h2>
-         {% if flights %}
-             <table border="1">
-                 <tr>
-                     <th>Flight Number</th>
-                     <th>Departure Date</th>
-                     <th>Departure Time</th>
-                     <th>Arrival Date</th>
-                     <th>Arrival Time</th>
-                     <th>Source</th>
-                     <th>Destination</th>
-                     <th>Status</th>
-                     <th>View Customers</th>
-                 </tr>
-                 {% for flight in flights %}
-                 <tr>
-                     <td>{{ flight['Flight_Num'] }}</td>
-                     <td>{{ flight['Departure_Date'] }}</td>
-                     <td>{{ flight['Departure_Time'] }}</td>
-                     <td>{{ flight['Arrival_Date'] }}</td>
-                     <td>{{ flight['Arrival_Time'] }}</td>
-                     <td>{{ flight['Departure_Code'] }}</td>
-                     <td>{{ flight['Arrival_Code'] }}</td>
-                     <td>{{ flight['Flight_Status'] }}</td>
-                     <td>
-                         <form action="/view_flight_customers" method="POST" style="display:inline;">
-                             <input type="hidden" name="flight_num" value="{{ flight['Flight_Num'] }}" />
-                             <input type="submit" value="View Customers" />
-                         </form>
-                     </td>
-                 </tr>
-                 {% endfor %}
-             </table>
-         {% else %}
-             <p>No flights found.</p>
-         {% endif %}
+    <!-- View Flights -->
+    <h2>View Flights</h2>
+    <a href="/view_staff_flights">Click Here to View Flights</a>
     <hr>
+    
 
     <!-- Create New Flight -->
     <h2>Create New Flight</h2>
+    <a href="/create_flight">Click Here to Create a New Flight</a>
     <hr>
 
     <!-- Change Flight Status -->
@@ -75,6 +43,7 @@
 
     <!-- Schedule Maintenance -->
     <h2>Schedule Maintenance</h2>
+    <a href="/schedule_maintenance">Click Here to Schedule Airplane Maintenance</a>
     <hr>
 
     <!-- View Frequent Customers -->
@@ -87,7 +56,10 @@
     <a href="/view_earned_revenue">Click Here to View Earned Revenue</a>
     <hr>
 
+    <!-- View Earned Revenue -->
+    <h2>Update Contact Information</h2>
+    <a href="/add_staff_contact">Click Here to Add Contact Info</a>
+    <hr>
+
  </body>
  </html>
-
-
