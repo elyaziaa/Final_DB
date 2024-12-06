@@ -10,10 +10,9 @@ import base64
 
 
 app = Flask(__name__)
-conn = pymysql.connect(host='127.0.0.1',
+conn = pymysql.connect(host='localhost',
                       user='root',
-                      password='root',
-                      port=8889,
+                      password='',
                       db='dec-5',
                       charset='utf8mb4',
                       cursorclass=pymysql.cursors.DictCursor)
@@ -358,17 +357,13 @@ def flight_status():
 
 @app.route('/rate_flight', methods=['GET', 'POST'])
 def rate_flight():
-    # Check if user is logged in
     if 'email' not in session:
         return redirect('/login')
     
-    # For GET request, fetch available flights to rate
     if request.method == 'GET':
         try:
-            # Create database cursor
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             
-            # Fetch flights the user has taken that are eligible for rating
             cursor.execute("""
                 SELECT DISTINCT f.Flight_Num, 
                        f.Departure_Code, 
@@ -385,34 +380,28 @@ def rate_flight():
                 ) b ON t.Ticket_ID = b.Ticket_ID
                 LEFT JOIN Rate_Comment rc ON f.Flight_Num = rc.Flight_Num AND b.Email = rc.Email
                 WHERE b.Email = %s 
-                  AND f.Departure_Time < CURRENT_TIME
+                  AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
                   AND rc.Flight_Num IS NULL
             """, (session['email'],))
             
             flights_to_rate = cursor.fetchall()
-            
             return render_template('rate_flight.html', flights=flights_to_rate)
         
         except pymysql.Error as err:
             print(f"Database error: {err}")
             return "Error fetching flights", 500
-        
         finally:
             if 'cursor' in locals():
                 cursor.close()
     
-    # For POST request, process the rating submission
     elif request.method == 'POST':
         try:
-            # Get form data
             flight_num = request.form['flight_num']
             rating = request.form['rating']
-            comment = request.form.get('comment', '')  # Optional comment
+            comment = request.form.get('comment', '')
             
-            # Create database cursor
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             
-            # Validate that the user has actually booked/purchased this flight
             cursor.execute("""
                 SELECT 1 
                 FROM Flight f
@@ -424,12 +413,11 @@ def rate_flight():
                 ) b ON t.Ticket_ID = b.Ticket_ID
                 WHERE b.Email = %s 
                   AND f.Flight_Num = %s
-                  AND f.Departure_Date < CURRENT_DATE
+                  AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
             """, (session['email'], flight_num))
             
             flight_exists = cursor.fetchone()
             
-            # Check if flight rating already exists
             cursor.execute("""
                 SELECT 1 
                 FROM Rate_Comment 
@@ -438,7 +426,6 @@ def rate_flight():
             
             already_rated = cursor.fetchone()
             
-            # Validate inputs
             if not flight_exists:
                 return "Invalid flight or you did not take this flight", 400
             
@@ -448,26 +435,20 @@ def rate_flight():
             if not (1 <= int(rating) <= 5):
                 return "Rating must be between 1 and 5", 400
             
-            # Insert rating and comment
             cursor.execute("""
                 INSERT INTO Rate_Comment (Email, Flight_Num, Comment, Rating)
                 VALUES (%s, %s, %s, %s)
             """, (session['email'], flight_num, comment, rating))
             
-            # Commit the transaction
             conn.commit()
-            
-            # Redirect to confirmation or back to rating page
             return redirect('/customer_home')
         
         except pymysql.Error as err:
-            # Rollback in case of error
             conn.rollback()
             print(f"Database error: {err}")
             return "Error submitting rating", 500
         
         except Exception as e:
-            # Rollback in case of any other error
             conn.rollback()
             print(f"Unexpected error: {e}")
             return "An unexpected error occurred", 500
@@ -475,8 +456,6 @@ def rate_flight():
         finally:
             if 'cursor' in locals():
                 cursor.close()
-
-
 
 @app.route('/customer_home')
 def customer_home():
@@ -573,7 +552,6 @@ def cancel_ticket():
             cursor.close()
 
 
-
 @app.route('/view_flights', methods=['GET'])
 def view_flights():
     if 'email' not in session:
@@ -595,8 +573,9 @@ def view_flights():
                     JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
                     JOIN Airport dep ON f.Departure_Code = dep.Airport_Code
                     JOIN Airport arr ON f.Arrival_Code = arr.Airport_Code
-                    WHERE p.Email = %s AND f.Departure_Date < CURDATE()
-                    ORDER BY f.Departure_Date DESC, f.Departure_Time DESC
+                    WHERE p.Email = %s 
+                    AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
+                    ORDER BY f.Arrival_Date DESC, f.Arrival_Time DESC
                 """
             else:
                 query = """
@@ -608,7 +587,8 @@ def view_flights():
                     JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
                     JOIN Airport dep ON f.Departure_Code = dep.Airport_Code
                     JOIN Airport arr ON f.Arrival_Code = arr.Airport_Code
-                    WHERE p.Email = %s AND f.Departure_Date >= CURDATE()
+                    WHERE p.Email = %s 
+                    AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) >= NOW()
                     ORDER BY f.Departure_Date ASC, f.Departure_Time ASC
                 """
             cursor.execute(query, (email,))
@@ -627,8 +607,8 @@ def view_flights():
                 JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
                 LEFT JOIN Rate_Comment rc ON f.Flight_Num = rc.Flight_Num AND p.Email = rc.Email
                 WHERE p.Email = %s
-                  AND f.Departure_Date < CURDATE()
-                  AND rc.Flight_Num IS NULL
+                AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
+                AND rc.Flight_Num IS NULL
             """, (email,))
             flights_to_rate = cursor.fetchall()
 
@@ -642,7 +622,6 @@ def view_flights():
     except Exception as e:
         print(f"Error fetching flights: {e}")
         return redirect(url_for('customer_home'))
-
 @app.route('/track_spending', methods=['GET', 'POST'])
 def track_spending():
     cursor = None
