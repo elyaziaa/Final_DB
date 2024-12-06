@@ -3,35 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Future Flights</title>
 </head>
 <body>
     <h1>Flight Created Successfully!</h1>
-    <h2>Future Flights for {{ airline_name }} (Next 30 Days)</h2>
-    <table border="1">
-        <thead>
-            <tr>
-                <th>Flight Number</th>
-                <th>Departure Date</th>
-                <th>Departure Time</th>
-                <th>Arrival Date</th>
-                <th>Arrival Time</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for flight in flights %}
-            <tr>
-                <td>{{ flight.Flight_Num }}</td>
-                <td>{{ flight.Departure_Date }}</td>
-                <td>{{ flight.Departure_Time }}</td>
-                <td>{{ flight.Arrival_Date }}</td>
-                <td>{{ flight.Arrival_Time }}</td>
-                <td>{{ flight.Flight_Status }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    
     <a href="/create_flight">Create Another Flight</a>
 </body>
 </html>
