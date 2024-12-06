@@ -385,7 +385,7 @@ def rate_flight():
                 ) b ON t.Ticket_ID = b.Ticket_ID
                 LEFT JOIN Rate_Comment rc ON f.Flight_Num = rc.Flight_Num AND b.Email = rc.Email
                 WHERE b.Email = %s 
-                  AND f.Departure_Date < CURRENT_DATE
+                  AND f.Departure_Time < CURRENT_TIME
                   AND rc.Flight_Num IS NULL
             """, (session['email'],))
             
