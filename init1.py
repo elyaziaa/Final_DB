@@ -10,10 +10,9 @@ import base64
 
 
 app = Flask(__name__)
-conn = pymysql.connect(host='127.0.0.1',
+conn = pymysql.connect(host='localhost',
                       user='root',
-                      password='root',
-                      port=8889,
+                      password='',
                       db='dec-5',
                       charset='utf8mb4',
                       cursorclass=pymysql.cursors.DictCursor)
@@ -44,7 +43,10 @@ def register():
     else:
         return redirect(url_for('hello'))  # if there is no role, go to the homepage
 
-@app.route('/customer_loginAuth', methods=['POST'])
+
+
+#
+@app.route('/customer_loginAuth', methods=['POST']) 
 def customer_loginAuth():
     email = request.form['email']
     password = request.form['password']
@@ -385,8 +387,8 @@ def rate_flight():
                 ) b ON t.Ticket_ID = b.Ticket_ID
                 LEFT JOIN Rate_Comment rc ON f.Flight_Num = rc.Flight_Num AND b.Email = rc.Email
                 WHERE b.Email = %s 
-                  AND f.Departure_Date < CURRENT_DATE
-                  AND rc.Flight_Num IS NULL
+                AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
+                AND rc.Flight_Num IS NULL
             """, (session['email'],))
             
             flights_to_rate = cursor.fetchall()
@@ -424,7 +426,7 @@ def rate_flight():
                 ) b ON t.Ticket_ID = b.Ticket_ID
                 WHERE b.Email = %s 
                   AND f.Flight_Num = %s
-                  AND f.Departure_Date < CURRENT_DATE
+                  AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
             """, (session['email'], flight_num))
             
             flight_exists = cursor.fetchone()
@@ -595,8 +597,9 @@ def view_flights():
                     JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
                     JOIN Airport dep ON f.Departure_Code = dep.Airport_Code
                     JOIN Airport arr ON f.Arrival_Code = arr.Airport_Code
-                    WHERE p.Email = %s AND f.Departure_Date < CURDATE()
-                    ORDER BY f.Departure_Date DESC, f.Departure_Time DESC
+                    WHERE p.Email = %s 
+                    AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
+                    ORDER BY f.Arrival_Date DESC, f.Arrival_Time DESC
                 """
             else:
                 query = """
@@ -608,7 +611,8 @@ def view_flights():
                     JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
                     JOIN Airport dep ON f.Departure_Code = dep.Airport_Code
                     JOIN Airport arr ON f.Arrival_Code = arr.Airport_Code
-                    WHERE p.Email = %s AND f.Departure_Date >= CURDATE()
+                    WHERE p.Email = %s 
+                    AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) >= NOW()
                     ORDER BY f.Departure_Date ASC, f.Departure_Time ASC
                 """
             cursor.execute(query, (email,))
@@ -627,8 +631,8 @@ def view_flights():
                 JOIN Purchase p ON t.Ticket_ID = p.Ticket_ID
                 LEFT JOIN Rate_Comment rc ON f.Flight_Num = rc.Flight_Num AND p.Email = rc.Email
                 WHERE p.Email = %s
-                  AND f.Departure_Date < CURDATE()
-                  AND rc.Flight_Num IS NULL
+                AND CONCAT(f.Arrival_Date, ' ', f.Arrival_Time) < NOW()
+                AND rc.Flight_Num IS NULL
             """, (email,))
             flights_to_rate = cursor.fetchall()
 
@@ -858,6 +862,26 @@ def purchase_ticket():
     finally:
         if cursor:
             cursor.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # use case 1 where staff can view flights. the default view are flights for the next 30 days
