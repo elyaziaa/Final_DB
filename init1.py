@@ -13,7 +13,7 @@ app = Flask(__name__)
 conn = pymysql.connect(host='localhost',
                       user='root',
                       password='',
-                      db='dec-5',
+                      db='dec-5', #make sure to edit this to whatever you named the db
                       charset='utf8mb4',
                       cursorclass=pymysql.cursors.DictCursor)
 
@@ -657,6 +657,7 @@ def view_flights():
     except Exception as e:
         print(f"Error fetching flights: {e}")
         return redirect(url_for('customer_home'))
+    
 @app.route('/track_spending', methods=['GET', 'POST'])
 def track_spending():
     cursor = None
