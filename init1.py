@@ -24,7 +24,8 @@ def hello():
 
 # below we use roles because we want to differentiate between when the customer is using the app and when the airline staff uses the app
 @app.route('/login')
-def login():
+def login(): #login for both airline staff and customers work in a similar way. Essentially we are accessing all the attributes associated to either airline staff or customer while ensuring that the login details (username and password) matches whats saved in the DB, of course with the MD5 hashing implemented as well.
+
     role = request.args.get('role')
     if role == 'customer':  # if the role is equal to customer then we will render the customer_login.html page
         return render_template('customer_login.html')  # rendering this file from the templates page
@@ -33,12 +34,13 @@ def login():
     else:  # if there is no role, go to the homepage
         return redirect(url_for('hello'))
 
-@app.route('/register')
+@app.route('/register') #registration for both cases generally work with 2 queries. First one just ensures that whatever primary key email/username is unique, and not used before by another user. After this check, the second query goes through and its just a simple insertion of the necessary attributes of either the customer or the staff.
 def register():
     role = request.args.get('role')
     if role == 'customer':  # if the role is equal to customer then we will render the customer_register.html page
         return render_template('customer_register.html')  # rendering this file from the templates page
     elif role == 'staff':  # if the role is equal to staff then we will render the staff_register.html page
+        #Additionally with airline staff since the staff can only work with an existing airline we check for that before allowing the registration. Therefore when testing the program make sure to access the phpmyadmin in order to insert at least one airline otherwise registration won't work.
         return render_template('staff_register.html')  # rendering this file from the templates page
     else:
         return redirect(url_for('hello'))  # if there is no role, go to the homepage
@@ -289,7 +291,8 @@ def search_flights():
    cursor = conn.cursor()
 
 
-   # Query for one-way flights
+   # when user is not logged in they can retrieve all the attributes stored in flight given that it fetches the row that matches the departure, arrival code, and the specific departure date, and accordingly the same logic for round trips.
+
    query = '''
        SELECT * FROM Flight
        WHERE Departure_Code = %s AND Arrival_Code = %s AND Departure_Date = %s
@@ -332,7 +335,8 @@ def search_flights():
        return "Page not found", 404
 
 
-@app.route('/flight_status', methods=['POST'])
+@app.route('/flight_status', methods=['POST']) #user when not logged in can get the flight status of certain flights when inputting the flight number, airline name, and departure/arrival date. The query works by selecting all the attributes from flight with the condition that the user’s imputed flight number, airline name, and departure/arrival date matches with a row in the DB’s flight table.
+
 def flight_status():
     airline_name = request.form['airline_name']
     flight_num = request.form['flight_num']
@@ -363,19 +367,19 @@ def flight_status():
 
 @app.route('/rate_flight', methods=['GET', 'POST'])
 def rate_flight():
-    #Enables users to rate past flights that are eligible for review.
-#Accepts ratings (1-5) and optional comments.
+  #the way rate flight’s query works is by accessing all the flights a user took by matching the ticket’s flight num and the flight table’s flight num, then selects only the flights that are already landed, and not rated by this user yet.
+
 
     if 'email' not in session:
         return redirect('/login')
     
-    # For GET request, fetch available flights to rate
+
     if request.method == 'GET':
         try:
-            # Create database cursor
+           
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             
-            # Fetch flights the user has taken that are eligible for rating
+           
             cursor.execute("""
                 SELECT DISTINCT f.Flight_Num, 
                        f.Departure_Code, 
@@ -408,18 +412,18 @@ def rate_flight():
             if 'cursor' in locals():
                 cursor.close()
     
-    # For POST request, process the rating submission
+   
     elif request.method == 'POST':
         try:
-            # Get form data
+            
             flight_num = request.form['flight_num']
             rating = request.form['rating']
-            comment = request.form.get('comment', '')  # Optional comment
+            comment = request.form.get('comment', '')  
             
-            # Create database cursor
+           
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             
-            # Validate that the user has actually booked/purchased this flight
+            
             cursor.execute("""
                 SELECT 1 
                 FROM Flight f
@@ -436,7 +440,7 @@ def rate_flight():
             
             flight_exists = cursor.fetchone()
             
-            # Check if flight rating already exists
+            
             cursor.execute("""
                 SELECT 1 
                 FROM Rate_Comment 
@@ -445,7 +449,7 @@ def rate_flight():
             
             already_rated = cursor.fetchone()
             
-            # Validate inputs
+            
             if not flight_exists:
                 return "Invalid flight or you did not take this flight", 400
             
@@ -455,26 +459,26 @@ def rate_flight():
             if not (1 <= int(rating) <= 5):
                 return "Rating must be between 1 and 5", 400
             
-            # Insert rating and comment
+           
             cursor.execute("""
                 INSERT INTO Rate_Comment (Email, Flight_Num, Comment, Rating)
                 VALUES (%s, %s, %s, %s)
             """, (session['email'], flight_num, comment, rating))
             
-            # Commit the transaction
+            
             conn.commit()
             
-            # Redirect to confirmation or back to rating page
+            
             return redirect('/customer_home')
         
         except pymysql.Error as err:
-            # Rollback in case of error
+            
             conn.rollback()
             print(f"Database error: {err}")
             return "Error submitting rating", 500
         
         except Exception as e:
-            # Rollback in case of any other error
+            
             conn.rollback()
             print(f"Unexpected error: {e}")
             return "An unexpected error occurred", 500
@@ -487,7 +491,7 @@ def rate_flight():
 
 @app.route('/customer_home')
 def customer_home():
-    # Check if user is logged in
+   
     if 'email' not in session:
         return redirect('/login')
     
@@ -495,7 +499,8 @@ def customer_home():
 
 @app.route('/cancel_ticket', methods=['POST'])
 def cancel_ticket():
-    # Allows the user to cancel a booked ticket by providing the ticket ID, but first ensures its not 24 hours before the flight.
+   #when we want to cancel the ticket, we want to ensure that the user can only cancel a ticket they had purchased.
+
     cursor = None
 
     try:
@@ -509,7 +514,7 @@ def cancel_ticket():
         # Create database cursor
         cursor = conn.cursor(pymysql.cursors.DictCursor)
 
-        # Step 1: Validate Ticket Ownership and Flight Timing
+        # first we check if this is the user's valid tiket
         cursor.execute("""
             SELECT t.Flight_Num, t.Seat_Number, f.Departure_Date, f.Departure_Time
             FROM Ticket t
@@ -519,10 +524,10 @@ def cancel_ticket():
         """, (ticket_id, email))
         ticket_info = cursor.fetchone()
 
-        # Check if ticket exists and belongs to the customer
+        #ticket exists? check 
         if not ticket_info:
             return "Ticket not found or does not belong to you", 400
-        # Assuming ticket_info['Departure_Time'] is a timedelta
+        
         departure_time = (datetime.min + ticket_info['Departure_Time']).time()
         flight_datetime = datetime.combine(ticket_info['Departure_Date'], departure_time)
         current_datetime = datetime.now()
@@ -530,59 +535,58 @@ def cancel_ticket():
         if flight_datetime - current_datetime <= timedelta(hours=24):
             return "Ticket cannot be canceled less than 24 hours before flight", 400
 
-        # Start database transaction
+
         conn.begin()
 
-        # Step 2: Remove Booking Record FIRST
+        # delete the b ooking record
         cursor.execute("DELETE FROM Booked WHERE Ticket_ID = %s", (ticket_id,))
 
-        # Step 3: Remove Purchase Record
+        # delete the dpurchsed record
         cursor.execute("DELETE FROM Purchase WHERE Ticket_ID = %s", (ticket_id,))
 
-        # Step 4: Delete the Ticket
+        # delete the ticket
         cursor.execute("DELETE FROM Ticket WHERE Ticket_ID = %s", (ticket_id,))
 
-        # Step 5: Restore Seat Availability
+        #seat is available again
         cursor.execute("""
             UPDATE Seat_Availability 
             SET Is_Available = TRUE 
             WHERE Flight_Num = %s AND Seat_Number = %s
         """, (ticket_info['Flight_Num'], ticket_info['Seat_Number']))
 
-        # Confirm all database changes
+    
         conn.commit()
 
-        # Optional: Refund Processing Logic (placeholder)
-        # In a real system, you'd implement refund logic here
+      
 
         return redirect('/customer_home')
 
     except KeyError as e:
         return f"Missing information: {str(e)}", 400
 
-    except pymysql.Error as err:
-        # If database transaction fails, undo changes
+    except pymysql.Error as err: #some error handling
         if conn:
             conn.rollback()
         print(f"Database error: {err}")
         return "Error processing ticket cancellation", 500
 
     except Exception as e:
-        # Handle any unexpected errors
+       
         if conn:
             conn.rollback()
         print(f"Unexpected error: {e}")
         return "An unexpected error occurred", 500
 
     finally:
-        # Always close database cursor
+       
         if cursor:
             cursor.close()
 
 
 
-@app.route('/view_flights', methods=['GET']) #2 Links to view either the future or past flights
-#Displays a table of flight details based on future or past flights
+@app.route('/view_flights', methods=['GET']) #the main difference in the queries between the past and future viewing of flights is the comparison sign between the curr-date and the departure date in our DB. Otherwise the query is almost exactly the same. It works by accessing the flight table and the ticket table and ensuring that this flight is purchased by the person logged in. We do this by the join statements for instance  JOIN Ticket t ON f.Flight_Num = t.Flight_Num, and so on.
+
+
 
 def view_flights():
     if 'email' not in session:
@@ -653,7 +657,6 @@ def view_flights():
     except Exception as e:
         print(f"Error fetching flights: {e}")
         return redirect(url_for('customer_home'))
-
 @app.route('/track_spending', methods=['GET', 'POST'])
 def track_spending():
     cursor = None
@@ -664,7 +667,7 @@ def track_spending():
         if not email:
             return "User not logged in.", 401
 
-        # Get default view data (always shown)
+        # Calculate total spent in the last year
         cursor.execute("""
             SELECT SUM(T.Sold_Price) AS Total_Spent
             FROM Purchase P
@@ -673,7 +676,7 @@ def track_spending():
         """, (email,))
         total_spent_last_year = cursor.fetchone()['Total_Spent'] or Decimal('0.00')
 
-        # Note the double %% to escape the % character
+        # Calculate spending in the last 6 months grouped by month
         cursor.execute("""
             SELECT DATE_FORMAT(P.Purchase_Date, '%%Y-%%m') AS Month, 
                 SUM(T.Sold_Price) AS Total_Spent
@@ -686,11 +689,13 @@ def track_spending():
         """, (email,))
         last_6_months_spending = cursor.fetchall()
 
+        # Default range spending variables for GET requests
         total_spent_range = None
         range_month_wise_spending = None
         start_date = None
         end_date = None
 
+        # Handle POST requests for custom date range
         if request.method == 'POST':
             start_date = request.form.get('start_date')
             end_date = request.form.get('end_date')
@@ -704,7 +709,6 @@ def track_spending():
                 """, (email, start_date, end_date))
                 total_spent_range = cursor.fetchone()['Total_Spent'] or Decimal('0.00')
 
-                # Note the double %% here as well
                 cursor.execute("""
                     SELECT DATE_FORMAT(P.Purchase_Date, '%%Y-%%m') AS Month, 
                            SUM(T.Sold_Price) AS Total_Spent
@@ -717,6 +721,7 @@ def track_spending():
                 """, (email, start_date, end_date))
                 range_month_wise_spending = cursor.fetchall()
 
+        # Render the page with the default or custom data
         return render_template(
             'customer_home.html',
             total_spent_last_year=total_spent_last_year,
@@ -734,16 +739,15 @@ def track_spending():
         if cursor:
             cursor.close()
 
+
 @app.route('/purchase_ticket', methods=['POST'])
 def purchase_ticket():
-    #Given a form to purchase tickets, customers will enter flight and seat information.
-#Collects payment details, and stores everything but the security code.
-
+    #first we simply display all the seats and their availability status given a flight number, from the seat availability table.
     cursor = None
     ticket_id = None
 
     try:
-        # Get form data
+        # get form data
         flight_num = request.form['flight_num']
         seat_number = request.form['seat_number']
         card_type = request.form['card_type']
@@ -752,7 +756,7 @@ def purchase_ticket():
         expiration_date = request.form['expiration_date']
         email = session['email']
 
-        # Convert expiration date
+      
         try:
             month, year = expiration_date.split('/')
             expiration_date = f"20{year}-{month}-01"
@@ -761,7 +765,7 @@ def purchase_ticket():
 
         cursor = conn.cursor(pymysql.cursors.DictCursor)
 
-        # Validate flight and get base price
+       
         cursor.execute("""
             SELECT * FROM Flight
             WHERE Flight_Num = %s AND Departure_Date >= CURRENT_DATE
@@ -771,7 +775,7 @@ def purchase_ticket():
         if not flight:
             return "Sorry, tickets for this flight are not available", 400
 
-        # Get customer details
+      
         cursor.execute("""
             SELECT Date_of_Birth, First_Name, Last_Name
             FROM Customer
@@ -779,10 +783,7 @@ def purchase_ticket():
         """, (email,))
         customer = cursor.fetchone()
 
-        # Check seat availability
-        #Allows the user to input a flight number and available seats will be displayed.
-#Displays a list of available seats for selection, and once selected purchase option in partially filled.
-
+        
         cursor.execute("""
             SELECT Is_Available FROM Seat_Availability
             WHERE Flight_Num = %s AND Seat_Number = %s
@@ -792,7 +793,7 @@ def purchase_ticket():
         if not seat or not seat['Is_Available']:
             return "Sorry, this seat is not available", 400
 
-        # Fetch seat statistics
+        
         cursor.execute("""
             SELECT 
                 COUNT(*) AS total_seats,
@@ -807,16 +808,16 @@ def purchase_ticket():
         available_seats = seat_stats['available_seats']
         base_price = flight['Base_Ticket_Price']
 
-        # Calculate sold price
+        # sold price
         if available_seats <= (total_seats * 0.2):  # 80% or more seats taken
             sold_price = float(base_price) * 1.25  # Increase by 25%
         else:
             sold_price = float(base_price)
 
-        # Start transaction
+
         conn.begin()
 
-        # Store payment information
+        #From this we can select a seat , and flight num and seat num is autofilled and then user must put in all the payment details such as card type, number, expiration date, name on card and cvv. 
         cursor.execute("""
             INSERT INTO Payment_Info 
             (Card_Type, Card_Number, Name_on_Card, Expiration_Date)
@@ -826,8 +827,9 @@ def purchase_ticket():
             Name_on_Card = VALUES(Name_on_Card),
             Expiration_Date = VALUES(Expiration_Date)
         """, (card_type, card_number, name_on_card, expiration_date))
+#After some basic validation of inputs, this is the main query that inserts into payment info all the info that is secure to store, so basically all the attributes except the cvv. 
 
-        # Generate ticket ID
+        # generating the ticket ID
         cursor.execute("SELECT MAX(Ticket_ID) AS max_id FROM Ticket")
         last_ticket_id = cursor.fetchone()['max_id']
         ticket_id = last_ticket_id + 1 if last_ticket_id else 1
@@ -866,6 +868,7 @@ def purchase_ticket():
 
         conn.commit()
         return redirect('/customer_home')
+#Above are the 4 main inserts we need to execute when purchasing. First being generating a ticket and associating it to the specific customer.  Next we set the seat availability with that flight number and seat as not available or false. Nest inserts, we will insert the purchase details into the purchase table while also storing the purchase date and time using curr date and time. Lastly we insert the ticket-id and other relevant attributes such as the email and payment card number to the booked table, this way we have a link between the email and the ticket-id.
 
     except Exception as e:
         if conn:
