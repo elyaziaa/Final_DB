@@ -17,7 +17,7 @@ conn = pymysql.connect(host='localhost',
                       charset='utf8mb4',
                       cursorclass=pymysql.cursors.DictCursor)
 
-
+#The purpose of this file is to initialze the application, define flask routes for each use case, and allow a connection to the database. It is where all of our queries are located. 
 @app.route('/')
 def hello():
     return render_template('index.html')
@@ -273,6 +273,9 @@ def home():
 
 
 @app.route('/search_flights', methods=['POST'])
+#A form to search for flights based on either the departure or arrival airports and one-way or round-trip, and specified dates.
+#Display of matching flight results or a message if no matches are found.
+
 def search_flights():
    # Retrieve form data
    departure_code = request.form['departure_code']
@@ -360,7 +363,9 @@ def flight_status():
 
 @app.route('/rate_flight', methods=['GET', 'POST'])
 def rate_flight():
-    # Check if user is logged in
+    #Enables users to rate past flights that are eligible for review.
+#Accepts ratings (1-5) and optional comments.
+
     if 'email' not in session:
         return redirect('/login')
     
@@ -490,7 +495,7 @@ def customer_home():
 
 @app.route('/cancel_ticket', methods=['POST'])
 def cancel_ticket():
-    # Initialize variables
+    # Allows the user to cancel a booked ticket by providing the ticket ID, but first ensures its not 24 hours before the flight.
     cursor = None
 
     try:
@@ -576,7 +581,9 @@ def cancel_ticket():
 
 
 
-@app.route('/view_flights', methods=['GET'])
+@app.route('/view_flights', methods=['GET']) #2 Links to view either the future or past flights
+#Displays a table of flight details based on future or past flights
+
 def view_flights():
     if 'email' not in session:
         return redirect(url_for('login'))
@@ -729,6 +736,9 @@ def track_spending():
 
 @app.route('/purchase_ticket', methods=['POST'])
 def purchase_ticket():
+    #Given a form to purchase tickets, customers will enter flight and seat information.
+#Collects payment details, and stores everything but the security code.
+
     cursor = None
     ticket_id = None
 
@@ -770,6 +780,9 @@ def purchase_ticket():
         customer = cursor.fetchone()
 
         # Check seat availability
+        #Allows the user to input a flight number and available seats will be displayed.
+#Displays a list of available seats for selection, and once selected purchase option in partially filled.
+
         cursor.execute("""
             SELECT Is_Available FROM Seat_Availability
             WHERE Flight_Num = %s AND Seat_Number = %s
@@ -1224,6 +1237,8 @@ def add_airport():
 # use case 9 which is to view earned revenue (done by checking purchase date)
 @app.route('/view_earned_revenue', methods=['GET'])
 def view_earned_revenue():
+    #Handles date-range-based spending tracking and displays spending data for a user-specified date range
+
     if 'role' not in session or session['role'] != 'staff':
         return redirect(url_for('login', role='staff'))
      
