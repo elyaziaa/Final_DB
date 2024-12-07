@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Flight Ratings</title>
+    <title>View Flight Ratings</title>
 </head>
 <body>
-    <h1>Flight Ratings for {{ airline_name }}</h1>
-    <a href="/home">Staff Homepage</a> | <a href="/logout">Logout</a>
+    <h1>View Flight Ratings for {{ airline_name }}</h1>
+    <a href="/home">Staff Homepage</a>
     <hr>
 
     {% if flights %}
@@ -38,7 +38,7 @@
             {% endfor %}
         </table>
     {% else %}
-        <p>No flights found for your airline.</p>
+        <p>No flights found.</p>
     {% endif %}
 </body>
 </html>

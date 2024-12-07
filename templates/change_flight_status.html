@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Change Flight Status</title>
+    <title>Change Status of Flights</title>
 </head>
 <body>
     <h1>Change Status of Flights for {{ airline_name }}</h1>
-    <a href="/home">Staff Homepage</a> | <a href="/logout">Logout</a>
+    <a href="/home">Staff Homepage</a>
 
     <hr>
 
-    <h2>Flights</h2>
+    <h2>Flights (Change Status of Future Flights)</h2>
     {% if flights %}
         <table border="1">
             <tr>
@@ -32,7 +32,7 @@
             {% endfor %}
         </table>
     {% else %}
-        <p>No flights found.</p>
+        <p>No flights were found.</p>
     {% endif %}
 
     <hr>
@@ -59,7 +59,7 @@
         </select>
         <br>
 
-        <button type="submit">Update Status</button>
+        <button type="submit">Update Flight Status</button>
     </form>
 </body>
 </html>

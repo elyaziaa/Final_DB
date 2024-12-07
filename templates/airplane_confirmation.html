@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Airplane Confirmation</title>
+    <title>Airplane Added Confirmation Page</title>
 </head>
 <body>
     <h1>Airplanes Owned by {{ airline_name }}</h1>
-    <a href="/home">Staff Homepage</a> | <a href="/logout">Logout</a>
+    <a href="/home">Staff Homepage</a>
     <hr>
-
+    <p>Airplane Was Successfully Added</p>
     {% if airplanes %}
         <table border="1">
             <tr>
@@ -30,7 +30,7 @@
             {% endfor %}
         </table>
     {% else %}
-        <p>No airplanes found for this airline.</p>
+        <p>No airplanes found.</p>
     {% endif %}
 </body>
 </html>

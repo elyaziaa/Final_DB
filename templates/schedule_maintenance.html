@@ -4,11 +4,10 @@
     <title>Schedule Maintenance</title>
 </head>
 <body>
-    <h1>Schedule Maintenance for {{ airline_name }}</h1>
-    <a href="/home">Staff Homepage</a> | <a href="/logout">Logout</a>
+    <h1>Schedule Maintenance for an Airplane</h1>
+    <a href="/home">Staff Homepage</a>
     <hr>
 
-    <!-- Form -->
     <form action="/schedule_maintenance" method="POST">
         <label for="airplane_id">Airplane ID:</label>
         <input type="text" name="airplane_id" placeholder="Enter Airplane ID" required><br>

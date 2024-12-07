@@ -5,10 +5,9 @@
 </head>
 <body>
     <h1>View Flights</h1>
-    <a href="/home">Staff Homepage</a> | <a href="/logout">Logout</a>
+    <a href="/home">Staff Homepage</a> 
     <hr>
 
-    <!-- Filter Form -->
     <form action="/view_staff_flights" method="POST">
         <label for="start_date">Start Date:</label>
         <input type="date" name="start_date"><br>
@@ -26,7 +25,7 @@
     </form>
     <hr>
 
-    <!-- Flights Table -->
+
     <h3>Flights</h3>
     {% if flights %}
         <table border="1">
@@ -59,8 +58,8 @@
 
     <hr>
     
-    <!-- Customers Table -->
-    <h3>Flights and the Customers for each Flight</h3>
+   
+    <h3>Flights and the Customers for each Flight.</h3>
     {% if customers %}
         <table border="1">
             <thead>
@@ -85,7 +84,7 @@
             </tbody>
         </table>
     {% else %}
-        <p>No customers found for these flights.</p>
+        <p>No customers found in these flights.</p>
     {% endif %}
 </body>
 </html>
