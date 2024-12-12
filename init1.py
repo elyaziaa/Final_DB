@@ -13,7 +13,7 @@ app = Flask(__name__)
 conn = pymysql.connect(host='localhost',
                       user='root',
                       password='',
-                      db='dec-5', #make sure to edit this to whatever you named the db
+                      db='Final-Demo', #make sure to edit this to whatever you named the db
                       charset='utf8mb4',
                       cursorclass=pymysql.cursors.DictCursor)
 
@@ -769,7 +769,7 @@ def purchase_ticket():
        
         cursor.execute("""
             SELECT * FROM Flight
-            WHERE Flight_Num = %s AND Departure_Date >= CURRENT_DATE
+            WHERE Flight_Num = %s 
         """, (flight_num,))
         flight = cursor.fetchone()
 
