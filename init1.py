@@ -810,7 +810,7 @@ def purchase_ticket():
         base_price = flight['Base_Ticket_Price']
 
         # sold price
-        if available_seats <= (total_seats * 0.2):  # 80% or more seats taken
+        if available_seats <= (total_seats * 0.3):  # 80% or more seats taken
             sold_price = float(base_price) * 1.25  # Increase by 25%
         else:
             sold_price = float(base_price)
